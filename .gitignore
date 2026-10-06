@@ -12,10 +12,10 @@ coverage/
 .vscode/
 *.iml
 
-# Firebase/local secrets
-firebase_options.dart
-android/app/google-services.json
-ios/Runner/GoogleService-Info.plist
+# Local signing secrets
+android/key.properties
+android/app/*.jks
+android/app/*.keystore
 
 # OS
 .DS_Store
