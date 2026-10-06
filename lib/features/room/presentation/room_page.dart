@@ -18,6 +18,7 @@ class _RoomPageState extends ConsumerState<RoomPage> {
   Timer? _heartbeat;
   bool _remoteChange = false;
   int _appliedVersion = -1;
+  String? _appliedVideoId;
   DateTime _lastWrite = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override void initState() { super.initState(); _heartbeat = Timer.periodic(const Duration(seconds: 2), (_) => _hostHeartbeat()); }
@@ -62,7 +63,14 @@ class _RoomPageState extends ConsumerState<RoomPage> {
     _ensurePlayer(room.videoId!);
     _remoteChange = true;
     try {
-      await _player!.loadVideoById(videoId: room.videoId!, startSeconds: room.position);
+      if (_appliedVideoId != room.videoId) {
+        await _player!.loadVideoById(videoId: room.videoId!, startSeconds: room.position);
+        _appliedVideoId = room.videoId;
+      } else {
+        var position = room.position;
+        if (room.isPlaying && room.updatedAt != null) position += DateTime.now().difference(room.updatedAt!.toDate()).inMilliseconds / 1000;
+        await _player!.seekTo(seconds: position.clamp(0.0, double.infinity).toDouble());
+      }
       if (room.isPlaying) await _player!.playVideo(); else await _player!.pauseVideo();
       _appliedVersion = room.version;
     } finally { _remoteChange = false; }
@@ -83,7 +91,7 @@ class _RoomPageState extends ConsumerState<RoomPage> {
     try {
       var position = room.position;
       if (room.isPlaying && room.updatedAt != null) position += DateTime.now().difference(room.updatedAt!.toDate()).inMilliseconds / 1000;
-      await _player!.seekTo(seconds: position.clamp(0, double.infinity));
+      await _player!.seekTo(seconds: position.clamp(0.0, double.infinity).toDouble());
       if (room.isPlaying) await _player!.playVideo(); else await _player!.pauseVideo();
     } finally { _remoteChange = false; }
   }
@@ -103,7 +111,7 @@ class _RoomPageState extends ConsumerState<RoomPage> {
     if (!snapshot.data!.exists) return const Scaffold(body: Center(child: Text('This room no longer exists.')));
     final room = Room.fromSnapshot(snapshot.data!);
     final isHost = room.hostId == ref.read(authRepositoryProvider).currentUser?.uid;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _applyRoom(room));
+    if (!isHost) WidgetsBinding.instance.addPostFrameCallback((_) => _applyRoom(room));
     return Scaffold(
       appBar: AppBar(title: Text('Room ${room.code}'), actions: [IconButton(onPressed: _chat, icon: const Icon(Icons.chat_bubble_outline)), IconButton(onPressed: () => _sync(room), icon: const Icon(Icons.sync))]),
       body: SingleChildScrollView(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
