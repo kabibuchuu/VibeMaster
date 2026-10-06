@@ -96,6 +96,16 @@ class _RoomPageState extends ConsumerState<RoomPage> {
     } finally { _remoteChange = false; }
   }
 
+  Future<void> _addToQueue() async {
+    final c = TextEditingController();
+    final value = await showDialog<String>(context: context, builder: (context) => AlertDialog(title: const Text('Add to queue'), content: TextField(controller: c, autofocus: true, decoration: const InputDecoration(hintText: 'YouTube URL or video ID')), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, c.text.trim()), child: const Text('Add'))]));
+    c.dispose(); if (value == null || value.isEmpty) return;
+    final id = YoutubePlayerController.convertUrlToId(value) ?? value;
+    if (id.length < 6) return;
+    final uid = ref.read(authRepositoryProvider).currentUser?.uid; if (uid == null) return;
+    await ref.read(roomRepositoryProvider).addToQueue(widget.roomId, videoId: id, title: 'YouTube video', addedBy: uid);
+  }
+
   Future<void> _chat() async {
     final c = TextEditingController();
     final text = await showDialog<String>(context: context, builder: (context) => AlertDialog(title: const Text('Chat'), content: TextField(controller: c, autofocus: true, maxLength: 300, decoration: const InputDecoration(hintText: 'Say something…')), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, c.text.trim()), child: const Text('Send'))]));
@@ -122,6 +132,8 @@ class _RoomPageState extends ConsumerState<RoomPage> {
         _Participants(roomId: widget.roomId),
         const SizedBox(height: 12),
         _Queue(roomId: widget.roomId, isHost: isHost),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(onPressed: _addToQueue, icon: const Icon(Icons.playlist_add), label: const Text('Add a video to the queue')),
         const SizedBox(height: 12),
         _Messages(roomId: widget.roomId),
       ])),
