@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyB93Z0LY3GVP...REDACTED',
+  apiKey: 'AIzaSyB93Z0LY3GVPDk-4MP7Aj_4B0C1x-bA6UE',
   authDomain: 'vibemaster-75200.firebaseapp.com',
   projectId: 'vibemaster-75200',
   storageBucket: 'vibemaster-75200.firebasestorage.app',
