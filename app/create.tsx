@@ -1,0 +1,8 @@
+import { useEffect, useState } from 'react';
+import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { router } from 'expo-router';
+import { auth } from '../firebase';
+import { createRoom } from '../src/lib/roomRepository';
+const makeCode=()=>Math.random().toString(36).slice(2,8).toUpperCase();
+export default function Create(){const[code,setCode]=useState('');const[busy,setBusy]=useState(false);useEffect(()=>setCode(makeCode()),[]);async function create(){if(!auth.currentUser)return;setBusy(true);try{await createRoom(code,auth.currentUser.uid);router.replace({pathname:'/room',params:{code}})}finally{setBusy(false)}}return <SafeAreaView style={s.c}><View style={s.card}><Text style={s.title}>Create your room</Text><Text style={s.label}>Your room code</Text><Text style={s.code}>{code}</Text><TouchableOpacity style={s.btn} onPress={create} disabled={busy}><Text style={s.bt}>{busy?'Creating…':'Start Room'}</Text></TouchableOpacity></View></SafeAreaView>}
+const s=StyleSheet.create({c:{flex:1,backgroundColor:'#0b0712',padding:24,justifyContent:'center'},card:{backgroundColor:'#17111f',padding:24,borderRadius:20},title:{color:'#fff',fontSize:28,fontWeight:'800',marginBottom:30},label:{color:'#999'},code:{color:'#a78bfa',fontSize:40,fontWeight:'900',letterSpacing:8,marginVertical:20},btn:{backgroundColor:'#7c3aed',padding:16,borderRadius:12,alignItems:'center'},bt:{color:'#fff',fontWeight:'700'}});
