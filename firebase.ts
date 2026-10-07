@@ -3,12 +3,13 @@ import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: 'REPLACE_WITH_FIREBASE_WEB_API_KEY',
+  apiKey: 'AIzaSyB93Z0LY3GVP...REDACTED',
   authDomain: 'vibemaster-75200.firebaseapp.com',
   projectId: 'vibemaster-75200',
   storageBucket: 'vibemaster-75200.firebasestorage.app',
-  messagingSenderId: 'REPLACE_WITH_FIREBASE_MESSAGING_SENDER_ID',
-  appId: 'REPLACE_WITH_FIREBASE_WEB_APP_ID',
+  messagingSenderId: '78732681524',
+  appId: '1:78732681524:web:69ec373906df2912bd8561',
+  measurementId: 'G-R6WR0B7BKG',
 };
 
 export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
