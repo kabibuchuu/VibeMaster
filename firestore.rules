@@ -43,21 +43,24 @@ service cloud.firestore {
         && request.resource.data.currentItemId == ''
         && request.resource.data.position == 0;
 
-      allow update: if isHost(roomId)
+      allow update: if (
+        isHost(roomId)
         && request.resource.data.hostId == resource.data.hostId
         && request.resource.data.mode == resource.data.mode
         && validRoom(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'version', 'controllerIds'
         ])
-        || (isController(roomId)
-          && request.resource.data.hostId == resource.data.hostId
-          && request.resource.data.mode == resource.data.mode
-          && request.resource.data.controllerIds == resource.data.controllerIds
-          && validRoom(request.resource.data)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status', 'currentItemId', 'position', 'updatedAt', 'version'
-          ]));
+      ) || (
+        isController(roomId)
+        && request.resource.data.hostId == resource.data.hostId
+        && request.resource.data.mode == resource.data.mode
+        && request.resource.data.controllerIds == resource.data.controllerIds
+        && validRoom(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'currentItemId', 'position', 'updatedAt', 'version'
+        ])
+      );
 
       allow delete: if isHost(roomId);
 
@@ -96,7 +99,7 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 280
           && request.resource.data.createdAt is number;
 
-        allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+        allow delete: if signedIn() && (resource.data.userId == request.auth.uid || isHost(roomId));
       }
     }
   }
