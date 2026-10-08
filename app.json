@@ -1,12 +1,20 @@
 {
-  "expo":{
-    "name":"VibeMaster",
-    "slug":"vibemaster",
-    "version":"0.1.0",
-    "orientation":"portrait",
-    "userInterfaceStyle":"dark",
-    "scheme":"vibemaster",
-    "android":{"package":"com.vibemaster.app","softwareKeyboardLayoutMode":"resize"},
-    "plugins":["expo-router"]
+  "expo": {
+    "name": "VibeMaster",
+    "slug": "vibemaster",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "vibemaster",
+    "android": {
+      "package": "com.vibemaster.app",
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "WRITE_SETTINGS"
+      ]
+    },
+    "plugins": [
+      "expo-router"
+    ]
   }
 }
