@@ -22,7 +22,10 @@ function formatDuration(value?: string) {
 export function youtubeConfigured() { return Boolean(getKey()); }
 
 async function api(path: string, params: Record<string, string>) {
-  const response = await fetch(`${API_BASE}${path}?${new URLSearchParams(params).toString()}`);
+  const { key, ...query } = params;
+  const response = await fetch(`${API_BASE}${path}?${new URLSearchParams(query).toString()}`, {
+    headers: key ? { 'X-Goog-Api-Key': key } : undefined,
+  });
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     const reason = data?.error?.errors?.[0]?.reason;
