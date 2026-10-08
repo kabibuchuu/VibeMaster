@@ -2,12 +2,18 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
+  getDocs,
   increment,
   onSnapshot,
   runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
+  limit,
+  orderBy,
+  query,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import type { Participant, QueueItem, Room, RoomMessage, RoomMode } from '../types/room';
@@ -174,6 +180,29 @@ export async function leaveRoom(code: string, userId: string) {
   await deleteDoc(participantRef(code, userId));
 }
 
+export async function deleteRoomDeep(code: string, hostId: string) {
+  const room = await getDoc(roomRef(code));
+  if (!room.exists()) throw new Error('ROOM_NOT_FOUND');
+  if (room.data().hostId !== hostId) throw new Error('NOT_HOST');
+
+  const [participants, messages] = await Promise.all([
+    getDocs(collection(roomRef(code), 'participants')),
+    getDocs(collection(roomRef(code), 'messages')),
+  ]);
+
+  const refs = [
+    ...participants.docs.map(item => item.ref),
+    ...messages.docs.map(item => item.ref),
+    roomRef(code),
+  ];
+
+  for (let start = 0; start < refs.length; start += 450) {
+    const batch = writeBatch(db);
+    refs.slice(start, start + 450).forEach(ref => batch.delete(ref));
+    await batch.commit();
+  }
+}
+
 export async function sendMessage(code: string, message: Omit<RoomMessage, 'id' | 'createdAt'>) {
   const ref = doc(collection(roomRef(code), 'messages'));
   await setDoc(ref, { ...message, createdAt: Date.now() });
@@ -233,12 +262,15 @@ export function watchMessages(
   onError?: (error: Error) => void,
 ) {
   return onSnapshot(
-    collection(roomRef(code), 'messages'),
+    query(
+      collection(roomRef(code), 'messages'),
+      orderBy('createdAt', 'desc'),
+      limit(50),
+    ),
     snapshot => cb(
       snapshot.docs
         .map(d => ({ id: d.id, ...d.data() } as RoomMessage))
-        .sort((a, b) => a.createdAt - b.createdAt)
-        .slice(-50),
+        .sort((a, b) => a.createdAt - b.createdAt),
     ),
     error => onError?.(error),
   );
