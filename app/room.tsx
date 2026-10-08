@@ -1,11 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { auth } from '../firebase';
-import { addQueueItem, joinRoom, setQueue, updateRoom, updatePlayback, watchParticipants, watchRoom } from '../src/lib/roomRepository';
+import {
+  addQueueItem,
+  appendQueueItems,
+  joinRoom,
+  leaveRoom,
+  moveQueueItem,
+  removeQueueItem,
+  sendMessage,
+  setCurrentItem,
+  watchMessages,
+  watchParticipants,
+  watchRoom,
+} from '../src/lib/roomRepository';
 import { getPlaylistItems } from '../src/lib/youtube';
-import type { Participant, QueueItem, Room } from '../src/types/room';
+import type { Participant, QueueItem, Room, RoomMessage } from '../src/types/room';
 
 type PlayerMessage =
   | { type: 'ready' }
@@ -13,51 +38,666 @@ type PlayerMessage =
   | { type: 'seek'; position: number }
   | { type: 'error'; code: number }
   | { type: 'autoplayBlocked' };
-const DRIFT_TOLERANCE_SECONDS=0.75;
 
-export default function RoomScreen(){
-  const {code,videoId,playlistId,title,channel,thumbnail,kind,duration}=useLocalSearchParams<{code:string,videoId?:string,playlistId?:string,title?:string,channel?:string,thumbnail?:string,kind?:'music'|'video',duration?:string}>();
-  const roomCode=String(code ?? '').trim().toUpperCase(); const[room,setRoom]=useState<Room|null>(null); const[people,setPeople]=useState<Participant[]>([]); const[name,setName]=useState(''); const[joined,setJoined]=useState(false); const[playerReady,setPlayerReady]=useState(false); const[autoplayBlocked,setAutoplayBlocked]=useState(false); const[playerError,setPlayerError]=useState<number|null>(null); const[error,setError]=useState(''); const playerRef=useRef<WebView>(null); const addedRef=useRef('');
-  const isHost=room?.hostId===auth.currentUser?.uid; const current=room?.queue?.find(x=>x.id===room.currentItemId)??room?.queue?.[0];
+const DRIFT_TOLERANCE_SECONDS = 0.75;
+const APP_REFERRER = 'https://com.vibemaster.app/';
 
-  useEffect(()=>watchRoom(roomCode,setRoom,e=>setError(e.message)),[roomCode]);
-  useEffect(()=>watchParticipants(roomCode,setPeople,e=>setError(e.message)),[roomCode]);
-  useEffect(()=>{if(!room||!auth.currentUser)return;const me=people.find(person=>person.id===auth.currentUser?.uid);if(me){setJoined(true);setName(me.name);}if(isHost&&!me)void joinRoom(roomCode,auth.currentUser.uid,'Host').catch(e=>setError(e instanceof Error?e.message:'Could not join room.'));},[room,people,isHost,roomCode]);
-  useEffect(()=>{
-    if(!room||!isHost)return;
-    if(playlistId&&addedRef.current!==String(playlistId)){addedRef.current=String(playlistId);void getPlaylistItems(String(playlistId)).then(items=>{if(!items.length)return;void setQueue(roomCode,[...(room.queue??[]),...items]);if(!room.currentItemId)void updateRoom(roomCode,{currentItemId:items[0].id});}).catch(()=>{});return;}
-    if(videoId&&addedRef.current!==String(videoId)){addedRef.current=String(videoId);const item:QueueItem={id:String(videoId),videoId:String(videoId),title:String(title??'Selected video'),channelTitle:String(channel??'YouTube'),thumbnail:String(thumbnail??''),duration:String(duration??''),kind:kind==='music'?'music':'video'};void addQueueItem(roomCode,item).then(()=>updateRoom(roomCode,{currentItemId:room.currentItemId||item.id}));}
-  },[room,isHost,videoId,playlistId,title,channel,thumbnail,kind,duration,roomCode]);
+const PLAYER_ERROR_TEXT: Record<number, string> = {
+  2: 'YouTube rejected this video ID. Try another result.',
+  5: 'This video cannot be played in the embedded player.',
+  100: 'This video was removed or is private.',
+  101: 'The owner does not allow this video to be embedded.',
+  150: 'The owner does not allow this video to be embedded.',
+  153: 'YouTube did not receive the app referrer required for embedded playback.',
+};
 
-  async function join(){if(!auth.currentUser)return;const clean=name.trim().slice(0,32);if(!clean){setError('Enter a display name first.');return;}try{await joinRoom(roomCode,auth.currentUser.uid,clean);setJoined(true);setError('');}catch(e){setError(e instanceof Error?e.message:'Could not join room.');}}
-  function send(command:string){playerRef.current?.injectJavaScript(`if(window.vmPlayer){window.vmPlayer.${command}} true;`);}
-  function seek(delta:number){playerRef.current?.injectJavaScript(`if(window.vmPlayer){const target=Math.max(0,window.vmPlayer.getCurrentTime()+${delta});window.vmPlayer.seekTo(target,true);window.ReactNativeWebView.postMessage(JSON.stringify({type:'seek',position:target}));} true;`);}
-  async function publish(status:'playing'|'paused',position:number){if(current)await updatePlayback(roomCode,{status,position,currentItemId:current.id});}
-  function onMessage(event:WebViewMessageEvent){try{const m=JSON.parse(event.nativeEvent.data) as PlayerMessage;if(m.type==='ready'){setPlayerReady(true);setPlayerError(null);return;}if(m.type==='error'){setPlayerError(m.code);return;}if(m.type==='autoplayBlocked'){setAutoplayBlocked(true);return;}if(!isHost)return;if(m.type==='seek'){void publish(room?.status==='playing'?'playing':'paused',m.position);}else if(m.type==='state'){if(m.state===1)void publish('playing',m.position);else if(m.state===2)void publish('paused',m.position);}}catch{}}
-
-  useEffect(()=>{
-    if(!room||!current||!playerReady||isHost)return;
-    const sync=()=>{const elapsed=room.status==='playing'?(Date.now()-room.updatedAt)/1000:0;const target=Math.max(0,room.position+elapsed);const status=room.status;playerRef.current?.injectJavaScript(`if(window.vmPlayer){const current=window.vmPlayer.getCurrentTime();const target=${target};if(Math.abs(current-target)>${DRIFT_TOLERANCE_SECONDS})window.vmPlayer.seekTo(target,true);if('${status}'==='playing')window.vmPlayer.playVideo();else window.vmPlayer.pauseVideo();} true;`);};
-    sync();const timer=setInterval(sync,1500);return()=>clearInterval(timer);
-  },[room,playerReady,isHost,current?.id]);
-
-  const html=useMemo(()=>{
-    if(!current)return '<html><body style="background:#08070d;color:#aaa;text-align:center;padding-top:35%;font-family:sans-serif">Search something to start the vibe.</body></html>';
-    const safeId=current.videoId.replace(/[^a-zA-Z0-9_-]/g,'');
-    return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#player{margin:0;width:100%;height:100%;background:#000;overflow:hidden}</style></head><body><div id="player"></div><script>var vmPlayer;function send(m){if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify(m));}function onYouTubeIframeAPIReady(){vmPlayer=new YT.Player('player',{videoId:'${safeId}',playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,enablejsapi:1,origin:'https://www.youtube.com'},events:{onReady:function(){send({type:'ready'});},onError:function(e){send({type:'error',code:e.data});},onAutoplayBlocked:function(){send({type:'autoplayBlocked'});},onStateChange:function(e){if(vmPlayer)send({type:'state',state:e.data,position:vmPlayer.getCurrentTime()||0});}}});}</script><script src="https://www.youtube.com/iframe_api"></script></body></html>`;
-  },[current?.id]);
-
-  if(!room)return <SafeAreaView style={s.center}><Text style={s.big}>{roomCode?'Room '+roomCode:'Invalid room'}</Text><Text style={s.muted}>{error||'Loading room…'}</Text></SafeAreaView>;
-  const status=room.status==='playing'?'LIVE':'PAUSED';
-  return <SafeAreaView style={s.c}>
-    <View style={s.header}><View><Text style={s.kicker}>{room.mode.toUpperCase()} ROOM</Text><Text style={s.title}>{roomCode}</Text></View><View style={s.people}><Text style={s.peopleText}>● {people.length}</Text></View></View>
-    <View style={s.player}><WebView ref={playerRef} source={{html}} javaScriptEnabled allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} onMessage={onMessage}/></View>
-    {playerError?<View style={s.error}><Text style={s.errorTitle}>This video cannot play here</Text><Text style={s.errorText}>YouTube rejected this embed (error {playerError}). Try another search result.</Text></View>:null}{error?<View style={s.error}><Text style={s.errorText}>{error}</Text></View>:null}
-    <View style={s.now}><View style={{flex:1}}>{current?<><Text style={s.nowKicker}>NOW PLAYING</Text><Text numberOfLines={2} style={s.nowTitle}>{current.title}</Text><Text style={s.channel}>{current.channelTitle}</Text></>:<Text style={s.muted}>Nothing queued yet</Text>}</View><Text style={s.live}>{status}</Text></View>
-    {isHost&&<View style={s.controls}><TouchableOpacity style={s.control} onPress={()=>seek(-10)} disabled={!playerReady}><Text style={s.controlText}>↶</Text><Text style={s.controlSub}>10s</Text></TouchableOpacity><TouchableOpacity style={s.play} onPress={()=>send(room.status==='playing'?'pauseVideo();':'playVideo();')} disabled={!playerReady}><Text style={s.playText}>{room.status==='playing'?'Ⅱ':'▶'}</Text></TouchableOpacity><TouchableOpacity style={s.control} onPress={()=>seek(10)} disabled={!playerReady}><Text style={s.controlText}>↷</Text><Text style={s.controlSub}>10s</Text></TouchableOpacity></View>}
-    {!isHost&&!joined&&<View style={s.joinCard}><Text style={s.joinTitle}>Join this vibe</Text><TextInput value={name} onChangeText={setName} placeholder="Your display name" placeholderTextColor="#66636e" maxLength={32} style={s.nameInput} onSubmitEditing={join} returnKeyType="done"/><TouchableOpacity style={s.joinBtn} onPress={join}><Text style={s.joinBtnText}>Join room</Text></TouchableOpacity></View>}{!isHost&&joined&&autoplayBlocked&&<TouchableOpacity style={s.syncBtn} onPress={()=>{setAutoplayBlocked(false);send('playVideo();')}}><Text style={s.syncBtnText}>Tap to sync playback</Text></TouchableOpacity>}
-    <View style={s.queueHead}><Text style={s.section}>UP NEXT · {room.queue.length}</Text>{isHost&&<TouchableOpacity onPress={()=>router.push({pathname:'/search',params:{kind:room.mode==='music'?'music':'all',roomCode}})}><Text style={s.add}>＋ Add</Text></TouchableOpacity>}</View>
-    <ScrollView contentContainerStyle={s.queue}>{room.queue.filter(x=>x.id!==current?.id).map((item,i)=><TouchableOpacity key={item.id} style={s.queueItem} onPress={()=>isHost&&updateRoom(roomCode,{currentItemId:item.id,status:'paused',position:0})}><Image source={{uri:item.thumbnail}} style={s.qThumb}/><View style={{flex:1}}><Text numberOfLines={1} style={s.qTitle}>{i+1}. {item.title}</Text><Text style={s.qMeta}>{item.channelTitle}{item.duration?' · '+item.duration:''}</Text></View></TouchableOpacity>)}{!room.queue.length&&<Text style={s.empty}>Add a song or video to build the queue.</Text>}</ScrollView>
-  </SafeAreaView>;
+function playerHtml(videoId: string) {
+  const safeId = videoId.replace(/[^a-zA-Z0-9_-]/g, '');
+  return [
+    '<!doctype html><html><head>',
+    '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">',
+    '<meta name="referrer" content="origin">',
+    '<style>html,body,#player{margin:0;width:100%;height:100%;background:#000;overflow:hidden}body{font-family:sans-serif}</style>',
+    '</head><body><div id="player"></div><script>',
+    'var vmPlayer=null;',
+    'function send(m){if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage(JSON.stringify(m));}}',
+    'function onYouTubeIframeAPIReady(){',
+    'vmPlayer=new YT.Player("player",{',
+    'width:"100%",height:"100%",videoId:"' + safeId + '",',
+    'playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,enablejsapi:1,origin:"' + APP_REFERRER + '",widget_referrer:"' + APP_REFERRER + '"},',
+    'events:{',
+    'onReady:function(){send({type:"ready"});},',
+    'onError:function(e){send({type:"error",code:e.data});},',
+    'onAutoplayBlocked:function(){send({type:"autoplayBlocked"});},',
+    'onStateChange:function(e){if(vmPlayer){send({type:"state",state:e.data,position:Number(vmPlayer.getCurrentTime()||0)});}}',
+    '}});',
+    '}',
+    '</script><script src="https://www.youtube.com/iframe_api"></script></body></html>',
+  ].join('');
 }
-const s=StyleSheet.create({c:{flex:1,backgroundColor:'#08070d',padding:16},center:{flex:1,backgroundColor:'#08070d',alignItems:'center',justifyContent:'center'},big:{color:'#fff',fontSize:26,fontWeight:'900'},header:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:12},kicker:{color:'#a78bfa',fontSize:10,fontWeight:'900',letterSpacing:2},title:{color:'#fff',fontSize:22,fontWeight:'900',marginTop:3},people:{backgroundColor:'#15131d',paddingHorizontal:12,paddingVertical:8,borderRadius:999},peopleText:{color:'#c4b5fd',fontWeight:'800'},player:{height:220,borderRadius:18,overflow:'hidden',backgroundColor:'#000'},error:{backgroundColor:'#35151c',borderRadius:14,padding:12,marginTop:10},errorTitle:{color:'#fff',fontWeight:'800'},errorText:{color:'#c99ca5',fontSize:12,lineHeight:18,marginTop:3},now:{flexDirection:'row',backgroundColor:'#111019',borderRadius:18,padding:16,marginTop:12,borderWidth:1,borderColor:'#201d28'},nowKicker:{color:'#8b5cf6',fontSize:9,fontWeight:'900',letterSpacing:1.5},nowTitle:{color:'#fff',fontSize:16,fontWeight:'900',marginTop:4},channel:{color:'#777481',fontSize:12,marginTop:3},live:{color:'#bca8ed',fontSize:10,fontWeight:'900'},controls:{flexDirection:'row',justifyContent:'center',alignItems:'center',gap:24,paddingVertical:12},control:{alignItems:'center',padding:8},controlText:{color:'#d8d1e2',fontSize:28},controlSub:{color:'#777481',fontSize:9},play:{width:58,height:58,borderRadius:29,backgroundColor:'#8b5cf6',alignItems:'center',justifyContent:'center'},playText:{color:'#fff',fontSize:23,fontWeight:'900'},joinCard:{backgroundColor:'#111019',borderRadius:18,padding:15,marginTop:8},joinTitle:{color:'#fff',fontWeight:'800',fontSize:16},nameInput:{backgroundColor:'#0b0a10',color:'#fff',borderRadius:12,paddingHorizontal:14,paddingVertical:12,marginTop:10,borderWidth:1,borderColor:'#292531'},joinBtn:{backgroundColor:'#24173f',padding:12,borderRadius:12,marginTop:10,alignItems:'center'},joinBtnText:{color:'#cfc2ed',fontWeight:'800'},syncBtn:{backgroundColor:'#8b5cf6',padding:14,borderRadius:14,alignItems:'center',marginTop:10},syncBtnText:{color:'#fff',fontWeight:'900'},queueHead:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:10,marginBottom:7},section:{color:'#777481',fontSize:11,fontWeight:'900',letterSpacing:1.4},add:{color:'#c4b5fd',fontWeight:'900'},queue:{gap:8,paddingBottom:24},queueItem:{flexDirection:'row',alignItems:'center',backgroundColor:'#111019',borderRadius:14,padding:7},qThumb:{width:70,height:44,borderRadius:8,backgroundColor:'#201d27',marginRight:10},qTitle:{color:'#eee',fontWeight:'700',fontSize:13},qMeta:{color:'#686570',fontSize:11,marginTop:3},empty:{color:'#67636f',textAlign:'center',padding:18},muted:{color:'#777481',marginTop:6}});
+
+export default function RoomScreen() {
+  const {
+    code,
+    videoId,
+    playlistId,
+    title,
+    channel,
+    thumbnail,
+    kind,
+    duration,
+  } = useLocalSearchParams<{
+    code: string;
+    videoId?: string;
+    playlistId?: string;
+    title?: string;
+    channel?: string;
+    thumbnail?: string;
+    kind?: 'music' | 'video';
+    duration?: string;
+  }>();
+
+  const roomCode = String(code ?? '').trim().toUpperCase();
+  const [room, setRoom] = useState<Room | null>(null);
+  const [people, setPeople] = useState<Participant[]>([]);
+  const [messages, setMessages] = useState<RoomMessage[]>([]);
+  const [name, setName] = useState('');
+  const [messageText, setMessageText] = useState('');
+  const [roomLoaded, setRoomLoaded] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const [playerError, setPlayerError] = useState<number | null>(null);
+  const [error, setError] = useState('');
+  const [chatOpen, setChatOpen] = useState(false);
+  const playerRef = useRef<WebView>(null);
+  const addedRef = useRef('');
+  const isHost = room?.hostId === auth.currentUser?.uid;
+  const me = people.find(person => person.id === auth.currentUser?.uid);
+  const joined = Boolean(me);
+  const current = room?.queue?.find(item => item.id === room.currentItemId) ?? room?.queue?.[0];
+
+  useEffect(() => {
+    if (!roomCode) {
+      setRoomLoaded(true);
+      return;
+    }
+    return watchRoom(
+      roomCode,
+      value => {
+        setRoom(value);
+        setRoomLoaded(true);
+        if (!value) setError('Room not found. Check the code and try again.');
+      },
+      e => setError(e.message),
+    );
+  }, [roomCode]);
+
+  useEffect(() => {
+    if (!roomCode) return;
+    return watchParticipants(roomCode, setPeople, e => setError(e.message));
+  }, [roomCode]);
+
+  useEffect(() => {
+    if (!roomCode) return;
+    return watchMessages(roomCode, setMessages, e => setError(e.message));
+  }, [roomCode]);
+
+  useEffect(() => {
+    if (me) setName(me.name);
+    if (room && isHost && !me) {
+      void joinRoom(roomCode, auth.currentUser?.uid ?? '', 'Host').catch(e =>
+        setError(e instanceof Error ? e.message : 'Could not join room.'),
+      );
+    }
+  }, [room, isHost, me, roomCode]);
+
+  useEffect(() => {
+    if (!room || !isHost) return;
+
+    if (playlistId && addedRef.current !== String(playlistId)) {
+      addedRef.current = String(playlistId);
+      void getPlaylistItems(String(playlistId))
+        .then(items => {
+          if (!items.length) return;
+          return appendQueueItems(roomCode, items).then(() => {
+            if (!room.currentItemId) return setCurrentItem(roomCode, items[0].id);
+          });
+        })
+        .catch(e => setError(e instanceof Error ? e.message : 'Could not add playlist.'));
+      return;
+    }
+
+    if (videoId && addedRef.current !== String(videoId)) {
+      addedRef.current = String(videoId);
+      const item: QueueItem = {
+        id: String(videoId),
+        videoId: String(videoId),
+        title: String(title ?? 'Selected video'),
+        channelTitle: String(channel ?? 'YouTube'),
+        thumbnail: String(thumbnail ?? ''),
+        duration: duration ? String(duration) : undefined,
+        kind: kind === 'music' ? 'music' : 'video',
+      };
+      void addQueueItem(roomCode, item)
+        .then(() => {
+          if (!room.currentItemId) return setCurrentItem(roomCode, item.id);
+        })
+        .catch(e => setError(e instanceof Error ? e.message : 'Could not add video.'));
+    }
+  }, [
+    room,
+    isHost,
+    videoId,
+    playlistId,
+    title,
+    channel,
+    thumbnail,
+    kind,
+    duration,
+    roomCode,
+  ]);
+
+  useEffect(() => {
+    setPlayerReady(false);
+    setPlayerError(null);
+    setAutoplayBlocked(false);
+  }, [current?.id]);
+
+  const syncPlayer = () => {
+    if (!room || !current || !playerReady) return;
+    const elapsed = room.status === 'playing'
+      ? Math.max(0, (Date.now() - room.updatedAt) / 1000)
+      : 0;
+    const target = Math.max(0, room.position + elapsed);
+    const desiredState = room.status === 'playing' ? 1 : 2;
+    const script = [
+      'if(window.vmPlayer){',
+      'var now=Number(window.vmPlayer.getCurrentTime()||0);',
+      'var state=Number(window.vmPlayer.getPlayerState());',
+      'var target=' + target + ';',
+      'if(Math.abs(now-target)>' + DRIFT_TOLERANCE_SECONDS + ')window.vmPlayer.seekTo(target,true);',
+      'if(state!==' + desiredState + '){' + (desiredState === 1 ? 'window.vmPlayer.playVideo();' : 'window.vmPlayer.pauseVideo();') + '}',
+      '}true;',
+    ].join('');
+    playerRef.current?.injectJavaScript(script);
+  };
+
+  useEffect(() => {
+    if (!room || !current || !playerReady) return;
+    syncPlayer();
+    if (isHost) return;
+    const timer = setInterval(syncPlayer, 2000);
+    return () => clearInterval(timer);
+  }, [room?.version, room?.status, room?.position, room?.updatedAt, current?.id, playerReady, isHost]);
+
+  async function publish(status: Room['status'], position: number) {
+    if (!current || !isHost) return;
+    try {
+      await updatePlayback(roomCode, {
+        status,
+        position: Math.max(0, position),
+        currentItemId: current.id,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Playback update failed.');
+    }
+  }
+
+  async function handlePlayerMessage(event: WebViewMessageEvent) {
+    try {
+      const message = JSON.parse(event.nativeEvent.data) as PlayerMessage;
+
+      if (message.type === 'ready') {
+        setPlayerReady(true);
+        setPlayerError(null);
+        return;
+      }
+
+      if (message.type === 'error') {
+        setPlayerError(message.code);
+        return;
+      }
+
+      if (message.type === 'autoplayBlocked') {
+        setAutoplayBlocked(true);
+        return;
+      }
+
+      if (!isHost) return;
+
+      if (message.type === 'seek') {
+        await publish(room?.status === 'playing' ? 'playing' : 'paused', message.position);
+        return;
+      }
+
+      if (message.type === 'state') {
+        if (message.state === 0) {
+          const queue = room?.queue ?? [];
+          const index = queue.findIndex(item => item.id === current?.id);
+          const next = index >= 0 ? queue[index + 1] : undefined;
+          if (next) {
+            await setCurrentItem(roomCode, next.id, 'playing', 0);
+          } else {
+            await publish('paused', message.position);
+          }
+        } else if (message.state === 1) {
+          await publish('playing', message.position);
+        } else if (message.state === 2) {
+          await publish('paused', message.position);
+        }
+      }
+    } catch {
+      // Ignore malformed WebView messages.
+    }
+  }
+
+  function command(script: string) {
+    playerRef.current?.injectJavaScript(
+      'if(window.vmPlayer){window.vmPlayer.' + script + '}true;',
+    );
+  }
+
+  function seek(delta: number) {
+    playerRef.current?.injectJavaScript(
+      'if(window.vmPlayer){' +
+      'var target=Math.max(0,Number(window.vmPlayer.getCurrentTime()||0)+' + delta + ');' +
+      'window.vmPlayer.seekTo(target,true);' +
+      'window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:target}));' +
+      '}true;',
+    );
+  }
+
+  async function selectItem(item: QueueItem) {
+    if (!isHost) return;
+    try {
+      await setCurrentItem(roomCode, item.id, 'paused', 0);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not select item.');
+    }
+  }
+
+  async function removeItem(item: QueueItem) {
+    if (!isHost || item.id === current?.id) return;
+    try {
+      await removeQueueItem(roomCode, item.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove item.');
+    }
+  }
+
+  async function moveItem(item: QueueItem, direction: 'up' | 'down') {
+    if (!isHost) return;
+    try {
+      await moveQueueItem(roomCode, item.id, direction);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not move item.');
+    }
+  }
+
+  async function shareRoom() {
+    try {
+      await Share.share({
+        title: 'Join my VibeMaster room',
+        message: 'Join my VibeMaster room: ' + roomCode,
+      });
+    } catch {
+      // Share sheets can be dismissed; no action needed.
+    }
+  }
+
+  async function submitMessage() {
+    const text = messageText.trim().slice(0, 280);
+    if (!text || !joined || !auth.currentUser) return;
+    try {
+      await sendMessage(roomCode, {
+        userId: auth.currentUser.uid,
+        name: name.trim() || 'Guest',
+        text,
+      });
+      setMessageText('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not send message.');
+    }
+  }
+
+  async function exitRoom() {
+    if (!auth.currentUser || !joined || isHost) return;
+    try {
+      await leaveRoom(roomCode, auth.currentUser.uid);
+      router.replace('/');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not leave room.');
+    }
+  }
+
+  const html = useMemo(
+    () => current
+      ? playerHtml(current.videoId)
+      : '<html><body style="margin:0;background:#08070d;color:#777;text-align:center;padding-top:35%;font-family:sans-serif">Add something to start the vibe.</body></html>',
+    [current?.id, current?.videoId],
+  );
+
+  if (!roomLoaded) {
+    return (
+      <SafeAreaView style={s.center}>
+        <ActivityIndicator color="#a78bfa" />
+        <Text style={s.muted}>Loading room {roomCode}…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!room) {
+    return (
+      <SafeAreaView style={s.center}>
+        <Text style={s.big}>Room unavailable</Text>
+        <Text style={s.muted}>{error || 'That room does not exist.'}</Text>
+        <TouchableOpacity style={s.primaryBtn} onPress={() => router.replace('/')}>
+          <Text style={s.primaryBtnText}>Back home</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  const status = room.status === 'playing' ? 'LIVE' : 'PAUSED';
+  const playerErrorText = playerError ? PLAYER_ERROR_TEXT[playerError] ?? 'YouTube could not play this video.' : '';
+
+  return (
+    <SafeAreaView style={s.c} edges={['top', 'bottom']}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+          <Text style={s.back}>‹</Text>
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={s.kicker}>{room.mode.toUpperCase()} ROOM</Text>
+          <Text style={s.title}>{roomCode}</Text>
+        </View>
+        <TouchableOpacity style={s.people} onPress={shareRoom}>
+          <Text style={s.peopleText}>● {people.length}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={s.player}>
+        <WebView
+          key={current?.id ?? 'empty-player'}
+          ref={playerRef}
+          source={{ html, baseUrl: APP_REFERRER }}
+          originWhitelist={['*']}
+          javaScriptEnabled
+          domStorageEnabled
+          allowsInlineMediaPlayback
+          allowsFullscreenVideo
+          mediaPlaybackRequiresUserAction={false}
+          onMessage={handlePlayerMessage}
+          onHttpError={() => setError('The YouTube player could not load. Check your connection and try again.')}
+          startInLoadingState
+        />
+      </View>
+
+      {playerError ? (
+        <View style={s.error}>
+          <Text style={s.errorTitle}>YouTube player error {playerError}</Text>
+          <Text style={s.errorText}>{playerErrorText}</Text>
+          <TouchableOpacity
+            style={s.retry}
+            onPress={() => {
+              setPlayerError(null);
+              playerRef.current?.reload();
+            }}
+          >
+            <Text style={s.retryText}>Reload player</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {error ? (
+        <TouchableOpacity style={s.error} onPress={() => setError('')}>
+          <Text style={s.errorText}>{error}</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      <View style={s.now}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.nowKicker}>NOW PLAYING</Text>
+          {current ? (
+            <>
+              <Text numberOfLines={2} style={s.nowTitle}>{current.title}</Text>
+              <Text style={s.channel}>{current.channelTitle}</Text>
+            </>
+          ) : (
+            <Text style={s.muted}>Nothing queued yet</Text>
+          )}
+        </View>
+        <Text style={s.live}>{status}</Text>
+      </View>
+
+      {isHost ? (
+        <View style={s.controls}>
+          <TouchableOpacity style={s.control} onPress={() => seek(-10)} disabled={!playerReady}>
+            <Text style={s.controlText}>↶</Text>
+            <Text style={s.controlSub}>10s</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.play, !playerReady && s.disabled]}
+            onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')}
+            disabled={!playerReady || !current}
+          >
+            <Text style={s.playText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.control} onPress={() => seek(10)} disabled={!playerReady}>
+            <Text style={s.controlText}>↷</Text>
+            <Text style={s.controlSub}>10s</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {!isHost && !joined ? (
+        <View style={s.joinCard}>
+          <Text style={s.joinTitle}>Join this vibe</Text>
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            placeholder="Your display name"
+            placeholderTextColor="#66636e"
+            maxLength={32}
+            style={s.nameInput}
+            onSubmitEditing={() => {
+              if (name.trim() && auth.currentUser) {
+                void joinRoom(roomCode, auth.currentUser.uid, name.trim())
+                  .catch(e => setError(e instanceof Error ? e.message : 'Could not join room.'));
+              }
+            }}
+            returnKeyType="done"
+          />
+          <TouchableOpacity
+            style={s.joinBtn}
+            onPress={() => {
+              if (!name.trim() || !auth.currentUser) {
+                setError('Enter a display name first.');
+                return;
+              }
+              void joinRoom(roomCode, auth.currentUser.uid, name.trim())
+                .catch(e => setError(e instanceof Error ? e.message : 'Could not join room.'));
+            }}
+          >
+            <Text style={s.joinBtnText}>Join room</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {autoplayBlocked && joined ? (
+        <TouchableOpacity
+          style={s.syncBtn}
+          onPress={() => {
+            setAutoplayBlocked(false);
+            syncPlayer();
+          }}
+        >
+          <Text style={s.syncBtnText}>Tap to sync playback</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      <View style={s.queueHead}>
+        <Text style={s.section}>UP NEXT · {Math.max(0, room.queue.length - (current ? 1 : 0))}</Text>
+        <View style={s.queueActions}>
+          {joined ? (
+            <TouchableOpacity onPress={() => setChatOpen(value => !value)}>
+              <Text style={s.chatToggle}>{chatOpen ? 'Hide chat' : 'Chat'}</Text>
+            </TouchableOpacity>
+          ) : null}
+          {isHost ? (
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: '/search',
+                  params: { kind: room.mode === 'music' ? 'music' : 'all', roomCode },
+                })
+              }
+            >
+              <Text style={s.add}>＋ Add</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={s.queue} keyboardShouldPersistTaps="handled">
+        {room.queue.filter(item => item.id !== current?.id).map((item, index) => (
+          <View key={item.id} style={[s.queueItem, item.id === current?.id && s.currentQueueItem]}>
+            <TouchableOpacity style={s.queueMain} onPress={() => void selectItem(item)} disabled={!isHost}>
+              <Image source={{ uri: item.thumbnail }} style={s.qThumb} />
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={1} style={s.qTitle}>{index + 1}. {item.title}</Text>
+                <Text style={s.qMeta}>
+                  {item.channelTitle}{item.duration ? ' · ' + item.duration : ''}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {isHost ? (
+              <View style={s.itemActions}>
+                <TouchableOpacity onPress={() => void moveItem(item, 'up')}>
+                  <Text style={s.itemAction}>↑</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => void moveItem(item, 'down')}>
+                  <Text style={s.itemAction}>↓</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => void removeItem(item)}>
+                  <Text style={s.itemRemove}>×</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
+        ))}
+        {!room.queue.length ? (
+          <Text style={s.empty}>Add a song or video to build the queue.</Text>
+        ) : null}
+
+        {chatOpen && joined ? (
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.chat}>
+            <View style={s.chatHeader}>
+              <Text style={s.section}>CHAT · {messages.length}</Text>
+            </View>
+            <View style={s.messages}>
+              {messages.length ? messages.map(message => (
+                <View key={message.id} style={s.message}>
+                  <Text style={s.messageName}>{message.name}</Text>
+                  <Text style={s.messageText}>{message.text}</Text>
+                </View>
+              )) : (
+                <Text style={s.empty}>Say something to the room.</Text>
+              )}
+            </View>
+            <View style={s.messageRow}>
+              <TextInput
+                value={messageText}
+                onChangeText={setMessageText}
+                placeholder="Message the room…"
+                placeholderTextColor="#66636e"
+                maxLength={280}
+                style={s.messageInput}
+                onSubmitEditing={() => void submitMessage()}
+                returnKeyType="send"
+              />
+              <TouchableOpacity style={s.sendBtn} onPress={() => void submitMessage()}>
+                <Text style={s.sendText}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        ) : null}
+
+        {!isHost && joined ? (
+          <TouchableOpacity style={s.leaveBtn} onPress={() => void exitRoom()}>
+            <Text style={s.leaveText}>Leave room</Text>
+          </TouchableOpacity>
+        ) : null}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const s = StyleSheet.create({
+  c: { flex: 1, backgroundColor: '#08070d', padding: 16 },
+  center: { flex: 1, backgroundColor: '#08070d', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  big: { color: '#fff', fontSize: 26, fontWeight: '900' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  backBtn: { paddingRight: 10 },
+  back: { color: '#fff', fontSize: 36, lineHeight: 36 },
+  kicker: { color: '#a78bfa', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
+  title: { color: '#fff', fontSize: 22, fontWeight: '900', marginTop: 3 },
+  people: { backgroundColor: '#15131d', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
+  peopleText: { color: '#c4b5fd', fontWeight: '800' },
+  player: { height: 220, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000' },
+  error: { backgroundColor: '#35151c', borderRadius: 14, padding: 12, marginTop: 10 },
+  errorTitle: { color: '#fff', fontWeight: '800' },
+  errorText: { color: '#c99ca5', fontSize: 12, lineHeight: 18, marginTop: 3 },
+  retry: { alignSelf: 'flex-start', backgroundColor: '#4a2029', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginTop: 8 },
+  retryText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  now: { flexDirection: 'row', backgroundColor: '#111019', borderRadius: 18, padding: 16, marginTop: 12, borderWidth: 1, borderColor: '#201d28' },
+  nowKicker: { color: '#8b5cf6', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
+  nowTitle: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 4 },
+  channel: { color: '#777481', fontSize: 12, marginTop: 3 },
+  live: { color: '#bca8ed', fontSize: 10, fontWeight: '900' },
+  controls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24, paddingVertical: 12 },
+  control: { alignItems: 'center', padding: 8 },
+  controlText: { color: '#d8d1e2', fontSize: 28 },
+  controlSub: { color: '#777481', fontSize: 9 },
+  play: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
+  playText: { color: '#fff', fontSize: 23, fontWeight: '900' },
+  disabled: { opacity: 0.5 },
+  joinCard: { backgroundColor: '#111019', borderRadius: 18, padding: 15, marginTop: 8 },
+  joinTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  nameInput: { backgroundColor: '#0b0a10', color: '#fff', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginTop: 10, borderWidth: 1, borderColor: '#292531' },
+  joinBtn: { backgroundColor: '#24173f', padding: 12, borderRadius: 12, marginTop: 10, alignItems: 'center' },
+  joinBtnText: { color: '#cfc2ed', fontWeight: '800' },
+  syncBtn: { backgroundColor: '#8b5cf6', padding: 14, borderRadius: 14, alignItems: 'center', marginTop: 10 },
+  syncBtnText: { color: '#fff', fontWeight: '900' },
+  queueHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 7 },
+  queueActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  section: { color: '#777481', fontSize: 11, fontWeight: '900', letterSpacing: 1.4 },
+  add: { color: '#c4b5fd', fontWeight: '900' },
+  chatToggle: { color: '#a78bfa', fontWeight: '800' },
+  queue: { gap: 8, paddingBottom: 28 },
+  queueItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111019', borderRadius: 14, padding: 7 },
+  currentQueueItem: { borderWidth: 1, borderColor: '#6d4ab6' },
+  queueMain: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  qThumb: { width: 70, height: 44, borderRadius: 8, backgroundColor: '#201d27', marginRight: 10 },
+  qTitle: { color: '#eee', fontWeight: '700', fontSize: 13 },
+  qMeta: { color: '#686570', fontSize: 11, marginTop: 3 },
+  itemActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  itemAction: { color: '#a78bfa', fontSize: 18, padding: 5 },
+  itemRemove: { color: '#e28d9b', fontSize: 22, padding: 4 },
+  empty: { color: '#67636f', textAlign: 'center', padding: 18 },
+  muted: { color: '#777481', marginTop: 6, textAlign: 'center' },
+  primaryBtn: { backgroundColor: '#8b5cf6', paddingHorizontal: 20, paddingVertical: 13, borderRadius: 14, marginTop: 18 },
+  primaryBtnText: { color: '#fff', fontWeight: '900' },
+  chat: { backgroundColor: '#111019', borderRadius: 16, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#201d28' },
+  chatHeader: { marginBottom: 6 },
+  messages: { maxHeight: 220 },
+  message: { paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#1d1a24' },
+  messageName: { color: '#a78bfa', fontSize: 10, fontWeight: '900' },
+  messageText: { color: '#e7e3ed', fontSize: 13, marginTop: 2, lineHeight: 18 },
+  messageRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  messageInput: { flex: 1, backgroundColor: '#0b0a10', color: '#fff', borderRadius: 12, paddingHorizontal: 12, minHeight: 44 },
+  sendBtn: { backgroundColor: '#8b5cf6', borderRadius: 12, justifyContent: 'center', paddingHorizontal: 14 },
+  sendText: { color: '#fff', fontWeight: '900' },
+  leaveBtn: { borderWidth: 1, borderColor: '#3a2730', borderRadius: 12, padding: 12, alignItems: 'center', marginTop: 10 },
+  leaveText: { color: '#c99ca5', fontWeight: '800' },
+});
