@@ -99,15 +99,15 @@ rooms/{roomCode}/messages/{messageId}
 
 The host's Room controls now include **End room & delete data**. That action deletes the room, its participant documents, and its chat messages.
 
-Existing old rooms from development are still normal Firestore data. They can be removed from the Firebase console. Firebase documents that deleting a document from the console also deletes its nested data. citeturn893545search0
+Existing old rooms from development are still normal Firestore data. They can be removed from the Firebase console. Firebase documents that deleting a document from the console also deletes its nested data.
 
-For larger production-scale retention, a server-side recursive cleanup or scheduled cleanup is preferable to doing broad deletes from a mobile client. Firebase documents callable/server-side recursive deletion for this use case. citeturn893545search1turn893545search4
+For larger production-scale retention, a server-side recursive cleanup or scheduled cleanup is preferable to doing broad deletes from a mobile client. Firebase documents callable/server-side recursive deletion for this use case.
 
 ## YouTube player limitation
 
 VibeMaster supplies the app-level title, queue, controls, volume, brightness, fullscreen, and access UI.
 
-The actual media remains a YouTube embedded player. YouTube's current embedded-player documentation says the player can keep displaying YouTube attribution/title/avatar elements in states such as paused/ended, and the old `modestbranding` option is deprecated and has no effect. citeturn630404search0turn630404search2
+The actual media remains a YouTube embedded player. YouTube's current embedded-player documentation says the player can keep displaying YouTube attribution/title/avatar elements in states such as paused/ended, and the old `modestbranding` option is deprecated and has no effect.
 
 ## Notes
 
