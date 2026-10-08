@@ -1,5 +1,3 @@
-import type { Timestamp } from 'firebase/firestore';
-
 export type RoomMode = 'music' | 'video' | 'mixed';
 
 export type QueueItem = {
@@ -20,7 +18,7 @@ export type Room = {
   currentItemId: string;
   queue: QueueItem[];
   position: number;
-  updatedAt: number | Timestamp;
+  updatedAt: number;
   version: number;
 };
 
