@@ -15,7 +15,7 @@ type PlayerMessage =
 const DRIFT_TOLERANCE_SECONDS=0.75;
 
 export default function RoomScreen(){
-  const {code,videoId,playlistId,title,channel,thumbnail,kind,duration}=useLocalSearchParams<{code:string,videoId?:string,title?:string,channel?:string,thumbnail?:string,kind?:'music'|'video',duration?:string}>();
+  const {code,videoId,playlistId,title,channel,thumbnail,kind,duration}=useLocalSearchParams<{code:string,videoId?:string,playlistId?:string,title?:string,channel?:string,thumbnail?:string,kind?:'music'|'video',duration?:string}>();
   const roomCode=String(code).toUpperCase(); const[room,setRoom]=useState<Room|null>(null); const[people,setPeople]=useState<Participant[]>([]); const[name,setName]=useState('Guest'); const[playerReady,setPlayerReady]=useState(false); const[playerError,setPlayerError]=useState<number|null>(null); const playerRef=useRef<WebView>(null); const addedRef=useRef('');
   const isHost=room?.hostId===auth.currentUser?.uid; const current=room?.queue?.find(x=>x.id===room.currentItemId)??room?.queue?.[0];
 
