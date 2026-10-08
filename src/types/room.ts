@@ -20,9 +20,10 @@ export type Room = {
   position: number;
   updatedAt: number;
   version: number;
+  controllerIds: string[];
 };
 
-export type Participant = { id: string; name: string; joinedAt: number };
+export type Participant = { id: string; name: string; joinedAt: number; role?: 'member' | 'controller' };
 
 export type RoomMessage = {
   id: string;
