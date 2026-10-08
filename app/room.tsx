@@ -11,12 +11,12 @@ type PlayerMessage =
   | { type: 'ready' }
   | { type: 'state'; state: number; position: number }
   | { type: 'seek'; position: number }
-  | { type: 'error'; code: number };
+  | { type: 'error'; code: number }\n  | { type: 'autoplayBlocked' };
 const DRIFT_TOLERANCE_SECONDS=0.75;
 
 export default function RoomScreen(){
   const {code,videoId,playlistId,title,channel,thumbnail,kind,duration}=useLocalSearchParams<{code:string,videoId?:string,playlistId?:string,title?:string,channel?:string,thumbnail?:string,kind?:'music'|'video',duration?:string}>();
-  const roomCode=String(code).toUpperCase(); const[room,setRoom]=useState<Room|null>(null); const[people,setPeople]=useState<Participant[]>([]); const[name,setName]=useState('Guest'); const[playerReady,setPlayerReady]=useState(false); const[playerError,setPlayerError]=useState<number|null>(null); const playerRef=useRef<WebView>(null); const addedRef=useRef('');
+  const roomCode=String(code ?? '').trim().toUpperCase(); const[room,setRoom]=useState<Room|null>(null); const[people,setPeople]=useState<Participant[]>([]); const[name,setName]=useState(''); const[joined,setJoined]=useState(false); const[playerReady,setPlayerReady]=useState(false); const[autoplayBlocked,setAutoplayBlocked]=useState(false); const[playerError,setPlayerError]=useState<number|null>(null); const[error,setError]=useState(''); const playerRef=useRef<WebView>(null); const addedRef=useRef('');
   const isHost=room?.hostId===auth.currentUser?.uid; const current=room?.queue?.find(x=>x.id===room.currentItemId)??room?.queue?.[0];
 
   useEffect(()=>watchRoom(roomCode,setRoom,e=>setError(e.message)),[roomCode]);
