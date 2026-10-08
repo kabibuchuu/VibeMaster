@@ -21,7 +21,10 @@
     "react-native-screens": "~4.23.0",
     "react-native-webview": "13.16.0",
     "expo-constants": "~55.0.17",
-    "expo-linking": "~55.0.17"
+    "expo-linking": "~55.0.17",
+    "expo-brightness": "~55.0.17",
+    "expo-screen-orientation": "~55.0.17",
+    "@react-native-community/slider": "5.1.2"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",
