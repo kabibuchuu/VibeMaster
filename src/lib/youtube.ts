@@ -78,7 +78,7 @@ export async function getPlaylistItems(playlistId: string): Promise<QueueSeed[]>
     if(pageToken)params.pageToken=pageToken;
     const page=await api('/playlistItems',params);
     items.push(...(page.items??[]));pageToken=page.nextPageToken??'';
-  }while(pageToken&&items.length<200);
+  }while(pageToken&&items.length<50);
 
   const ids=items.map(x=>x.contentDetails?.videoId).filter(Boolean);
   const videos:any[]=[];
