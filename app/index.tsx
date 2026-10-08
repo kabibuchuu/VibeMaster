@@ -12,7 +12,7 @@ export default function Home() {
     <SafeAreaView style={s.c}>
       <View style={s.hero}>
         <Text style={s.badge}>VIBEMASTER</Text>
-        <Text style={s.title}>Your night.\nYour people.\nYour vibe.</Text>
+        <Text style={s.title}>Your night.{"\n"}Your people.{"\n"}Your vibe.</Text>
         <Text style={s.sub}>Listen, watch and discover together — perfectly in sync.</Text>
       </View>
       <TouchableOpacity style={s.search} onPress={() => router.push('/search')}><Text style={s.searchIcon}>⌕</Text><Text style={s.placeholder}>Search songs, videos & playlists</Text></TouchableOpacity>
