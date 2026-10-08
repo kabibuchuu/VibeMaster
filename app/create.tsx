@@ -3,19 +3,24 @@ import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-na
 import { router, useLocalSearchParams } from 'expo-router';
 import { auth } from '../firebase';
 import { createRoom, setQueue, updateRoom } from '../src/lib/roomRepository';
+import { getPlaylistItems } from '../src/lib/youtube';
 import type { QueueItem, RoomMode } from '../src/types/room';
 const makeCode=()=>Math.random().toString(36).slice(2,8).toUpperCase();
 
 export default function Create(){
-  const params=useLocalSearchParams<{videoId?:string,title?:string,channel?:string,thumbnail?:string,kind?:'music'|'video',duration?:string}>();
+  const params=useLocalSearchParams<{videoId?:string,playlistId?:string,title?:string,channel?:string,thumbnail?:string,kind?:'music'|'video'|'playlist',duration?:string}>();
   const [code,setCode]=useState(''); const[mode,setMode]=useState<RoomMode>(params.kind==='music'?'music':params.kind==='video'?'video':'mixed'); const[busy,setBusy]=useState(false);
   useEffect(()=>setCode(makeCode()),[]);
   async function create(){
     if(!auth.currentUser)return; setBusy(true);
     try{
       await createRoom(code,auth.currentUser.uid,mode);
-      if(params.videoId){
-        const item:QueueItem={id:params.videoId,videoId:params.videoId,title:params.title??'Selected video',channelTitle:params.channel??'YouTube',thumbnail:params.thumbnail??'',duration:params.duration,kind:params.kind??'video'};
+      if(params.playlistId){
+        const items=await getPlaylistItems(String(params.playlistId));
+        await setQueue(code,items);
+        if(items[0])await updateRoom(code,{currentItemId:items[0].id});
+      } else if(params.videoId){
+        const item:QueueItem={id:params.videoId,videoId:params.videoId,title:params.title??'Selected video',channelTitle:params.channel??'YouTube',thumbnail:params.thumbnail??'',duration:params.duration,kind:params.kind==='music'?'music':'video'};
         await setQueue(code,[item]);
         await updateRoom(code,{currentItemId:item.id});
       }
