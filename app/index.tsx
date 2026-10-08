@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ensureAnonymousAuth, watchAuth } from '../src/lib/auth';
 
@@ -7,9 +8,9 @@ export default function Home() {
   const [code, setCode] = useState('');
   const [ready, setReady] = useState(false);
   useEffect(() => { const unsub = watchAuth(() => setReady(true)); ensureAnonymousAuth().catch(console.error); return unsub; }, []);
-  if (!ready) return <SafeAreaView style={s.center}><ActivityIndicator/><Text style={s.muted}>Getting your vibe ready…</Text></SafeAreaView>;
+  if (!ready) return <SafeAreaView style={s.center} edges={['top','bottom']}><ActivityIndicator/><Text style={s.muted}>Getting your vibe ready…</Text></SafeAreaView>;
   return (
-    <SafeAreaView style={s.c}>
+    <SafeAreaView style={s.c} edges={['top','bottom']}>
       <View style={s.hero}>
         <Text style={s.badge}>VIBEMASTER</Text>
         <Text style={s.title}>Your night.{"\n"}Your people.{"\n"}Your vibe.</Text>
