@@ -8,10 +8,7 @@
     "scheme": "vibemaster",
     "android": {
       "package": "com.vibemaster.app",
-      "softwareKeyboardLayoutMode": "resize",
-      "permissions": [
-        "WRITE_SETTINGS"
-      ]
+      "softwareKeyboardLayoutMode": "resize"
     },
     "plugins": [
       "expo-router"
