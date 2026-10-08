@@ -81,7 +81,7 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 280
           && request.resource.data.createdAt is number;
 
-        allow update, delete: if signedIn() && resource.data.userId == request.auth.uid;
+        allow delete: if signedIn() && resource.data.userId == request.auth.uid;
       }
     }
   }
