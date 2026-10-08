@@ -8,7 +8,7 @@ import type { Participant, Room } from '../src/types/room';
 
 type PlayerMessage =
   | { type: 'ready' }
-  | { type: 'state'; state: number; position: number };
+  | { type: 'state'; state: number; position: number }\n  | { type: 'seek'; position: number };
 
 const DRIFT_TOLERANCE_SECONDS = 0.75;
 
@@ -39,6 +39,16 @@ export default function RoomScreen() {
     );
   }
 
+  function seekPlayer(delta: number) {
+    playerRef.current?.injectJavaScript(
+      `if(window.vmPlayer){
+        const target=Math.max(0,window.vmPlayer.getCurrentTime()+${delta});
+        window.vmPlayer.seekTo(target,true);
+        if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'seek',position:target}));
+      } true;`,
+    );
+  }
+
   async function publishPlayerState(status: 'playing' | 'paused', position: number) {
     await updatePlayback(roomCode, {
       status,
@@ -55,7 +65,14 @@ export default function RoomScreen() {
         return;
       }
 
-      if (!isHost || message.type !== 'state') return;
+      if (!isHost) return;
+
+      if (message.type === 'seek') {
+        void publishPlayerState(room?.status === 'playing' ? 'playing' : 'paused', message.position);
+        return;
+      }
+
+      if (message.type !== 'state') return;
 
       if (message.state === 1) {
         void publishPlayerState('playing', message.position);
@@ -222,7 +239,7 @@ function onYouTubeIframeAPIReady(){
             <TouchableOpacity
               style={s.smallBtn}
               disabled={!playerReady}
-              onPress={() => sendPlayerCommand('seekTo(Math.max(0,window.vmPlayer.getCurrentTime()-10),true);')}
+              onPress={() => seekPlayer(-10)}
             >
               <Text style={s.bt}>↶ 10s</Text>
             </TouchableOpacity>
@@ -230,7 +247,7 @@ function onYouTubeIframeAPIReady(){
             <TouchableOpacity
               style={s.smallBtn}
               disabled={!playerReady}
-              onPress={() => sendPlayerCommand('seekTo(window.vmPlayer.getCurrentTime()+10,true);')}
+              onPress={() => seekPlayer(10)}
             >
               <Text style={s.bt}>10s ↷</Text>
             </TouchableOpacity>
