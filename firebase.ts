@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyB93Z0LY3GVP...actual-config-is-client-side-and-should-be-restricted',
+  apiKey: 'AIzaSyB93Z0LY3GVPd-4MP7Aj_4B0C1x-bA6UE',
   authDomain: 'vibemaster-75200.firebaseapp.com',
   projectId: 'vibemaster-75200',
   storageBucket: 'vibemaster-75200.firebasestorage.app',
