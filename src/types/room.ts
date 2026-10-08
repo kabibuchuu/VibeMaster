@@ -23,3 +23,11 @@ export type Room = {
 };
 
 export type Participant = { id: string; name: string; joinedAt: number };
+
+export type RoomMessage = {
+  id: string;
+  userId: string;
+  name: string;
+  text: string;
+  createdAt: number;
+};
