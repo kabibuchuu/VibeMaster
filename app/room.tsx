@@ -3,7 +3,8 @@ import { Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, Vi
 import { router, useLocalSearchParams } from 'expo-router';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { auth } from '../firebase';
-import { addQueueItem, joinRoom, updateRoom, updatePlayback, watchParticipants, watchRoom } from '../src/lib/roomRepository';
+import { addQueueItem, joinRoom, setQueue, updateRoom, updatePlayback, watchParticipants, watchRoom } from '../src/lib/roomRepository';
+import { getPlaylistItems } from '../src/lib/youtube';
 import type { Participant, QueueItem, Room } from '../src/types/room';
 
 type PlayerMessage =
@@ -14,18 +15,17 @@ type PlayerMessage =
 const DRIFT_TOLERANCE_SECONDS=0.75;
 
 export default function RoomScreen(){
-  const {code,videoId,title,channel,thumbnail,kind,duration}=useLocalSearchParams<{code:string,videoId?:string,title?:string,channel?:string,thumbnail?:string,kind?:'music'|'video',duration?:string}>();
+  const {code,videoId,playlistId,title,channel,thumbnail,kind,duration}=useLocalSearchParams<{code:string,videoId?:string,title?:string,channel?:string,thumbnail?:string,kind?:'music'|'video',duration?:string}>();
   const roomCode=String(code).toUpperCase(); const[room,setRoom]=useState<Room|null>(null); const[people,setPeople]=useState<Participant[]>([]); const[name,setName]=useState('Guest'); const[playerReady,setPlayerReady]=useState(false); const[playerError,setPlayerError]=useState<number|null>(null); const playerRef=useRef<WebView>(null); const addedRef=useRef('');
   const isHost=room?.hostId===auth.currentUser?.uid; const current=room?.queue?.find(x=>x.id===room.currentItemId)??room?.queue?.[0];
 
   useEffect(()=>watchRoom(roomCode,setRoom),[roomCode]);
   useEffect(()=>watchParticipants(roomCode,setPeople),[roomCode]);
   useEffect(()=>{
-    if(!room||!isHost||!videoId||addedRef.current===videoId)return;
-    addedRef.current=videoId;
-    const item:QueueItem={id:String(videoId),videoId:String(videoId),title:String(title??'Selected video'),channelTitle:String(channel??'YouTube'),thumbnail:String(thumbnail??''),duration:String(duration??''),kind:kind==='music'?'music':'video'};
-    void addQueueItem(roomCode,item).then(()=>updateRoom(roomCode,{currentItemId:room.currentItemId||item.id}));
-  },[room,isHost,videoId,title,channel,thumbnail,kind,duration,roomCode]);
+    if(!room||!isHost)return;
+    if(playlistId&&addedRef.current!==String(playlistId)){addedRef.current=String(playlistId);void getPlaylistItems(String(playlistId)).then(items=>{if(!items.length)return;void setQueue(roomCode,[...(room.queue??[]),...items]);if(!room.currentItemId)void updateRoom(roomCode,{currentItemId:items[0].id});}).catch(()=>{});return;}
+    if(videoId&&addedRef.current!==String(videoId)){addedRef.current=String(videoId);const item:QueueItem={id:String(videoId),videoId:String(videoId),title:String(title??'Selected video'),channelTitle:String(channel??'YouTube'),thumbnail:String(thumbnail??''),duration:String(duration??''),kind:kind==='music'?'music':'video'};void addQueueItem(roomCode,item).then(()=>updateRoom(roomCode,{currentItemId:room.currentItemId||item.id}));}
+  },[room,isHost,videoId,playlistId,title,channel,thumbnail,kind,duration,roomCode]);
 
   async function join(){if(auth.currentUser)await joinRoom(roomCode,auth.currentUser.uid,name.trim()||'Guest');}
   function send(command:string){playerRef.current?.injectJavaScript(`if(window.vmPlayer){window.vmPlayer.${command}} true;`);}
