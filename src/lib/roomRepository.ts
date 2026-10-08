@@ -64,6 +64,20 @@ export async function updateRoom(code: string, data: Partial<Room>) {
   await updateDoc(roomRef(code), { ...cleaned, ...touch() });
 }
 
+export async function setController(code: string, userId: string, enabled: boolean) {
+  const ref = roomRef(code);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists()) throw new Error('ROOM_NOT_FOUND');
+    const data = snapshot.data();
+    const current = Array.isArray(data.controllerIds) ? (data.controllerIds as string[]) : [];
+    const next = enabled
+      ? Array.from(new Set([...current, userId]))
+      : current.filter(id => id !== userId);
+    transaction.update(ref, { controllerIds: next, ...touch() });
+  });
+}
+
 export async function updatePlayback(
   code: string,
   data: Pick<Room, 'status' | 'position' | 'currentItemId'>,
@@ -181,6 +195,7 @@ function normalizeRoom(code: string, data: Record<string, unknown>): Room {
     currentItemId: typeof data.currentItemId === 'string' ? data.currentItemId : '',
     position: typeof data.position === 'number' ? Math.max(0, data.position) : 0,
     version: typeof data.version === 'number' ? data.version : 0,
+    controllerIds: Array.isArray(data.controllerIds) ? (data.controllerIds as string[]) : [],
   };
 }
 
