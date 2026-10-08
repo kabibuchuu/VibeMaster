@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Share,
@@ -23,6 +24,7 @@ import {
   leaveRoom,
   moveQueueItem,
   removeQueueItem,
+  setController,
   sendMessage,
   setCurrentItem,
   updatePlayback,
@@ -67,7 +69,7 @@ function playerHtml(videoId: string) {
     'function onYouTubeIframeAPIReady(){',
     'vmPlayer=new YT.Player("player",{',
     'width:"100%",height:"100%",videoId:"' + safeId + '",',
-    'playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,enablejsapi:1,origin:"' + APP_ORIGIN + '",widget_referrer:"' + APP_REFERRER + '"},',
+    'playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,fs:1,enablejsapi:1,origin:"' + APP_ORIGIN + '",widget_referrer:"' + APP_REFERRER + '"},',
     'events:{',
     'onReady:function(){send({type:"ready"});setInterval(function(){if(vmPlayer){send({type:"progress",position:Number(vmPlayer.getCurrentTime()||0),duration:Number(vmPlayer.getDuration()||0)});}},500);},',
     'onError:function(e){send({type:"error",code:e.data});},',
@@ -116,9 +118,11 @@ export default function RoomScreen() {
   const [playerDuration, setPlayerDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [progressWidth, setProgressWidth] = useState(0);
+  const [manageOpen, setManageOpen] = useState(false);
   const playerRef = useRef<WebView>(null);
   const addedRef = useRef('');
   const isHost = room?.hostId === auth.currentUser?.uid;
+  const canControl = Boolean(isHost || (auth.currentUser?.uid && room?.controllerIds?.includes(auth.currentUser.uid)));
   const me = people.find(person => person.id === auth.currentUser?.uid);
   const joined = Boolean(me);
   const current = room?.queue?.find(item => item.id === room.currentItemId) ?? room?.queue?.[0];
@@ -317,7 +321,7 @@ export default function RoomScreen() {
   }
 
   function seekToFraction(fraction: number) {
-    if (!playerReady || !playerDuration || !isHost) return;
+    if (!playerReady || !playerDuration || !canControl) return;
     const target = Math.max(0, Math.min(playerDuration, playerDuration * fraction));
     playerRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.seekTo(' + target + ',true);window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:' + target + '}));}true;'
@@ -332,6 +336,7 @@ export default function RoomScreen() {
   }
 
   function seek(delta: number) {
+    if (!canControl) return;
     playerRef.current?.injectJavaScript(
       'if(window.vmPlayer){' +
       'var target=Math.max(0,Number(window.vmPlayer.getCurrentTime()||0)+' + delta + ');' +
@@ -365,6 +370,34 @@ export default function RoomScreen() {
       await moveQueueItem(roomCode, item.id, direction);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not move item.');
+    }
+  }
+
+  async function changeTrack(direction: -1 | 1) {
+    if (!canControl || !room || !current) return;
+    const queue = room.queue ?? [];
+    const index = queue.findIndex(item => item.id === current.id);
+    if (index < 0) return;
+    if (direction < 0 && playerPosition > 8) {
+      seekToFraction(0);
+      return;
+    }
+    const next = queue[index + direction];
+    if (!next) return;
+    try {
+      await setCurrentItem(roomCode, next.id, 'playing', 0);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not change track.');
+    }
+  }
+
+  async function toggleController(userId: string) {
+    if (!isHost || userId === auth.currentUser?.uid) return;
+    try {
+      const enabled = !(room?.controllerIds ?? []).includes(userId);
+      await setController(roomCode, userId, enabled);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update room access.');
     }
   }
 
@@ -436,7 +469,8 @@ export default function RoomScreen() {
   const playerErrorText = playerError ? PLAYER_ERROR_TEXT[playerError] ?? 'YouTube could not play this video.' : '';
 
   return (
-    <SafeAreaView style={s.c} edges={['top', 'bottom']}>
+    <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView style={s.c} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
           <Text style={s.back}>‹</Text>
@@ -445,7 +479,7 @@ export default function RoomScreen() {
           <Text style={s.kicker}>{room.mode.toUpperCase()} ROOM</Text>
           <Text style={s.title}>{roomCode}</Text>
         </View>
-        <TouchableOpacity style={s.people} onPress={shareRoom}>
+        <TouchableOpacity style={s.people} onPress={() => (isHost ? setManageOpen(true) : void shareRoom())}>
           <Text style={s.peopleText}>● {people.length}</Text>
         </TouchableOpacity>
       </View>
@@ -467,9 +501,41 @@ export default function RoomScreen() {
         />
         {current ? (
           <View pointerEvents="box-none" style={s.playerOverlay}>
+            <View style={s.playerTopRow}>
+              <View style={s.playerPill}>
+                <Text style={s.playerPillText}>{room.mode === 'music' ? '♪ MUSIC' : '▶ VIDEO'}</Text>
+              </View>
+              <View style={s.playerTopRight}>
+                <View style={s.playerPill}>
+                  <Text style={s.playerPillText}>{status}</Text>
+                </View>
+                <TouchableOpacity onPress={toggleMute} style={s.miniControl}>
+                  <Text style={s.miniControlText}>{muted ? '🔇' : '🔊'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            {canControl ? (
+              <View style={s.videoCenterControls}>
+                <TouchableOpacity style={s.videoSkip} onPress={() => seek(-10)} disabled={!playerReady}>
+                  <Text style={s.videoSkipIcon}>↶</Text>
+                  <Text style={s.videoSkipText}>10</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.videoPlay}
+                  onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')}
+                  disabled={!playerReady}
+                >
+                  <Text style={s.videoPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={s.videoSkip} onPress={() => seek(10)} disabled={!playerReady}>
+                  <Text style={s.videoSkipIcon}>↷</Text>
+                  <Text style={s.videoSkipText}>10</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             <View pointerEvents="box-none" style={s.playerBottom}>
               <TouchableOpacity
-                disabled={!isHost || !playerDuration}
+                disabled={!canControl || !playerDuration}
                 onPress={event => {
                   if (!progressWidth) return;
                   seekToFraction(event.nativeEvent.locationX / progressWidth);
@@ -486,9 +552,7 @@ export default function RoomScreen() {
               </TouchableOpacity>
               <View style={s.playerMetaRow}>
                 <Text style={s.playerTime}>{formatTime(playerPosition)} / {formatTime(playerDuration)}</Text>
-                <TouchableOpacity onPress={toggleMute} style={s.miniControl}>
-                  <Text style={s.miniControlText}>{muted ? '🔇' : '🔊'}</Text>
-                </TouchableOpacity>
+                <Text style={s.playerHint}>{canControl ? 'ROOM CONTROL' : 'SYNCED'}</Text>
               </View>
             </View>
           </View>
@@ -532,8 +596,12 @@ export default function RoomScreen() {
         <Text style={s.live}>{status}</Text>
       </View>
 
-      {isHost ? (
+      {canControl ? (
         <View style={s.controls}>
+          <TouchableOpacity style={s.control} onPress={() => void changeTrack(-1)} disabled={!playerReady}>
+            <Text style={s.controlText}>⏮</Text>
+            <Text style={s.controlSub}>PREV</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={s.control} onPress={() => seek(-10)} disabled={!playerReady}>
             <Text style={s.controlText}>↶</Text>
             <Text style={s.controlSub}>10s</Text>
@@ -549,8 +617,16 @@ export default function RoomScreen() {
             <Text style={s.controlText}>↷</Text>
             <Text style={s.controlSub}>10s</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={s.control} onPress={() => void changeTrack(1)} disabled={!playerReady}>
+            <Text style={s.controlText}>⏭</Text>
+            <Text style={s.controlSub}>NEXT</Text>
+          </TouchableOpacity>
         </View>
-      ) : null}
+      ) : (
+        <View style={s.viewerHint}>
+          <Text style={s.viewerHintText}>{room.status === 'playing' ? 'SYNCED WITH ROOM' : 'ROOM PAUSED'}</Text>
+        </View>
+      )}
 
       {!isHost && !joined ? (
         <View style={s.joinCard}>
@@ -653,7 +729,7 @@ export default function RoomScreen() {
         ) : null}
 
         {chatOpen && joined ? (
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.chat}>
+          <View style={s.chat}>
             <View style={s.chatHeader}>
               <Text style={s.section}>CHAT · {messages.length}</Text>
             </View>
@@ -682,7 +758,7 @@ export default function RoomScreen() {
                 <Text style={s.sendText}>Send</Text>
               </TouchableOpacity>
             </View>
-          </KeyboardAvoidingView>
+          </View>
         ) : null}
 
         {!isHost && joined ? (
@@ -691,12 +767,52 @@ export default function RoomScreen() {
           </TouchableOpacity>
         ) : null}
       </ScrollView>
+
+      <Modal visible={manageOpen} transparent animationType="slide" onRequestClose={() => setManageOpen(false)}>
+        <View style={s.modalBackdrop}>
+          <View style={s.accessSheet}>
+            <View style={s.accessHeader}>
+              <View>
+                <Text style={s.accessTitle}>Room controls</Text>
+                <Text style={s.accessSub}>Choose who can control playback.</Text>
+              </View>
+              <TouchableOpacity onPress={() => setManageOpen(false)} style={s.closeBtn}>
+                <Text style={s.closeText}>×</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={s.accessList} contentContainerStyle={{ paddingBottom: 10 }}>
+              {people.map(person => {
+                const owner = person.id === room.hostId;
+                const controller = owner || room.controllerIds.includes(person.id);
+                return (
+                  <View key={person.id} style={s.accessRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.accessName}>{person.name}{owner ? ' · Host' : ''}</Text>
+                      <Text style={s.accessRole}>{owner ? 'Full access' : controller ? 'Playback access' : 'Viewer'}</Text>
+                    </View>
+                    {!owner ? (
+                      <TouchableOpacity style={[s.accessToggle, controller && s.accessToggleOn]} onPress={() => void toggleController(person.id)}>
+                        <Text style={s.accessToggleText}>{controller ? 'CONTROL ON' : 'ALLOW CONTROL'}</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity style={s.shareRoomBtn} onPress={() => void shareRoom()}>
+              <Text style={s.shareRoomText}>Share room code</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  c: { flex: 1, backgroundColor: '#08070d', padding: 16 },
+  safe: { flex: 1, backgroundColor: '#08070d' },
+  c: { flex: 1, backgroundColor: '#08070d', paddingHorizontal: 16 },
   center: { flex: 1, backgroundColor: '#08070d', alignItems: 'center', justifyContent: 'center', padding: 24 },
   big: { color: '#fff', fontSize: 26, fontWeight: '900' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
@@ -707,12 +823,23 @@ const s = StyleSheet.create({
   people: { backgroundColor: '#15131d', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
   peopleText: { color: '#c4b5fd', fontWeight: '800' },
   player: { height: 220, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000' },
-  playerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
-  playerBottom: { paddingHorizontal: 12, paddingBottom: 10, paddingTop: 30, backgroundColor: 'rgba(0,0,0,0.38)' },
+  playerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between' },
+  playerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10 },
+  playerTopRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  playerPill: { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 },
+  playerPillText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  videoCenterControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 28 },
+  videoSkip: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  videoSkipIcon: { color: '#fff', fontSize: 18, lineHeight: 18 },
+  videoSkipText: { color: '#fff', fontSize: 8, fontWeight: '900', marginTop: -1 },
+  videoPlay: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
+  videoPlayText: { color: '#fff', fontSize: 25, fontWeight: '900' },
+  playerBottom: { paddingHorizontal: 12, paddingBottom: 9, paddingTop: 22, backgroundColor: 'rgba(0,0,0,0.42)' },
   progressTrack: { height: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.28)', overflow: 'hidden' },
   progressFill: { height: 4, borderRadius: 4, backgroundColor: '#a78bfa' },
   playerMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
   playerTime: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  playerHint: { color: '#c4b5fd', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   miniControl: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.48)', alignItems: 'center', justifyContent: 'center' },
   miniControlText: { fontSize: 15 },
   error: { backgroundColor: '#35151c', borderRadius: 14, padding: 12, marginTop: 10 },
@@ -725,7 +852,7 @@ const s = StyleSheet.create({
   nowTitle: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 4 },
   channel: { color: '#777481', fontSize: 12, marginTop: 3 },
   live: { color: '#bca8ed', fontSize: 10, fontWeight: '900' },
-  controls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 24, paddingVertical: 12 },
+  controls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, paddingVertical: 10 },
   control: { alignItems: 'center', padding: 8 },
   controlText: { color: '#d8d1e2', fontSize: 28 },
   controlSub: { color: '#777481', fontSize: 9 },
@@ -733,6 +860,8 @@ const s = StyleSheet.create({
   playText: { color: '#fff', fontSize: 23, fontWeight: '900' },
   controlDisabled: { opacity: 0.45 },
   disabled: { opacity: 0.5 },
+  viewerHint: { alignItems: 'center', paddingVertical: 8 },
+  viewerHintText: { color: '#777481', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
   joinCard: { backgroundColor: '#111019', borderRadius: 18, padding: 15, marginTop: 8 },
   joinTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
   nameInput: { backgroundColor: '#0b0a10', color: '#fff', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginTop: 10, borderWidth: 1, borderColor: '#292531' },
@@ -759,9 +888,9 @@ const s = StyleSheet.create({
   muted: { color: '#777481', marginTop: 6, textAlign: 'center' },
   primaryBtn: { backgroundColor: '#8b5cf6', paddingHorizontal: 20, paddingVertical: 13, borderRadius: 14, marginTop: 18 },
   primaryBtnText: { color: '#fff', fontWeight: '900' },
-  chat: { backgroundColor: '#111019', borderRadius: 16, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#201d28' },
+  chat: { backgroundColor: '#111019', borderRadius: 16, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#201d28', overflow: 'hidden' },
   chatHeader: { marginBottom: 6 },
-  messages: { maxHeight: 220 },
+  messages: { maxHeight: 170, overflow: 'hidden' },
   message: { paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#1d1a24' },
   messageName: { color: '#a78bfa', fontSize: 10, fontWeight: '900' },
   messageText: { color: '#e7e3ed', fontSize: 13, marginTop: 2, lineHeight: 18 },
@@ -772,3 +901,4 @@ const s = StyleSheet.create({
   leaveBtn: { borderWidth: 1, borderColor: '#3a2730', borderRadius: 12, padding: 12, alignItems: 'center', marginTop: 10 },
   leaveText: { color: '#c99ca5', fontWeight: '800' },
 });
+
