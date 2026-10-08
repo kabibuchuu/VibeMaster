@@ -15,6 +15,11 @@ service cloud.firestore {
         get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid;
     }
 
+    function isController(roomId) {
+      return signedIn() && roomExists(roomId) &&
+        request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.controllerIds;
+    }
+
     function validRoom(data) {
       return data.hostId is string
         && data.mode in ['music', 'video', 'mixed']
@@ -23,7 +28,9 @@ service cloud.firestore {
         && data.position is number
         && data.position >= 0
         && data.queue is list
-        && data.queue.size() <= 50;
+        && data.queue.size() <= 50
+        && data.controllerIds is list
+        && data.controllerIds.size() <= 50;
     }
 
     match /rooms/{roomId} {
@@ -41,8 +48,16 @@ service cloud.firestore {
         && request.resource.data.mode == resource.data.mode
         && validRoom(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'version'
-        ]);
+          'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'version', 'controllerIds'
+        ])
+        || (isController(roomId)
+          && request.resource.data.hostId == resource.data.hostId
+          && request.resource.data.mode == resource.data.mode
+          && request.resource.data.controllerIds == resource.data.controllerIds
+          && validRoom(request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'currentItemId', 'position', 'updatedAt', 'version'
+          ]));
 
       allow delete: if isHost(roomId);
 
