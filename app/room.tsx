@@ -37,6 +37,7 @@ type PlayerMessage =
   | { type: 'ready' }
   | { type: 'state'; state: number; position: number }
   | { type: 'seek'; position: number }
+  | { type: 'progress'; position: number; duration: number }
   | { type: 'error'; code: number }
   | { type: 'autoplayBlocked' };
 
@@ -68,7 +69,7 @@ function playerHtml(videoId: string) {
     'width:"100%",height:"100%",videoId:"' + safeId + '",',
     'playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,enablejsapi:1,origin:"' + APP_ORIGIN + '",widget_referrer:"' + APP_REFERRER + '"},',
     'events:{',
-    'onReady:function(){send({type:"ready"});},',
+    'onReady:function(){send({type:"ready"});setInterval(function(){if(vmPlayer){send({type:"progress",position:Number(vmPlayer.getCurrentTime()||0),duration:Number(vmPlayer.getDuration()||0)});}},500);},',
     'onError:function(e){send({type:"error",code:e.data});},',
     'onAutoplayBlocked:function(){send({type:"autoplayBlocked"});},',
     'onStateChange:function(e){if(vmPlayer){send({type:"state",state:e.data,position:Number(vmPlayer.getCurrentTime()||0)});}}',
@@ -111,6 +112,10 @@ export default function RoomScreen() {
   const [playerError, setPlayerError] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [chatOpen, setChatOpen] = useState(false);
+  const [playerPosition, setPlayerPosition] = useState(0);
+  const [playerDuration, setPlayerDuration] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [progressWidth, setProgressWidth] = useState(0);
   const playerRef = useRef<WebView>(null);
   const addedRef = useRef('');
   const isHost = room?.hostId === auth.currentUser?.uid;
@@ -255,6 +260,12 @@ export default function RoomScreen() {
         return;
       }
 
+      if (message.type === 'progress') {
+        setPlayerPosition(Math.max(0, message.position));
+        setPlayerDuration(Math.max(0, message.duration));
+        return;
+      }
+
       if (message.type === 'error') {
         setPlayerError(message.code);
         return;
@@ -297,6 +308,27 @@ export default function RoomScreen() {
     playerRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.' + script + '}true;',
     );
+  }
+
+  function toggleMute() {
+    const nextMuted = !muted;
+    setMuted(nextMuted);
+    command(nextMuted ? 'mute();' : 'unMute();');
+  }
+
+  function seekToFraction(fraction: number) {
+    if (!playerReady || !playerDuration || !isHost) return;
+    const target = Math.max(0, Math.min(playerDuration, playerDuration * fraction));
+    playerRef.current?.injectJavaScript(
+      'if(window.vmPlayer){window.vmPlayer.seekTo(' + target + ',true);window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:' + target + '}));}true;'
+    );
+  }
+
+  function formatTime(seconds: number) {
+    const total = Math.max(0, Math.floor(seconds || 0));
+    const minutes = Math.floor(total / 60);
+    const secs = String(total % 60).padStart(2, '0');
+    return minutes + ':' + secs;
   }
 
   function seek(delta: number) {
@@ -433,6 +465,34 @@ export default function RoomScreen() {
           onHttpError={() => setError('The YouTube player could not load. Check your connection and try again.')}
           startInLoadingState
         />
+        {current ? (
+          <View pointerEvents="box-none" style={s.playerOverlay}>
+            <View pointerEvents="box-none" style={s.playerBottom}>
+              <TouchableOpacity
+                disabled={!isHost || !playerDuration}
+                onPress={event => {
+                  if (!progressWidth) return;
+                  seekToFraction(event.nativeEvent.locationX / progressWidth);
+                }}
+                onLayout={event => setProgressWidth(event.nativeEvent.layout.width)}
+                style={s.progressTrack}
+              >
+                <View
+                  style={[
+                    s.progressFill,
+                    { width: progressWidth ? Math.min(1, playerPosition / Math.max(1, playerDuration)) * progressWidth : 0 },
+                  ]}
+                />
+              </TouchableOpacity>
+              <View style={s.playerMetaRow}>
+                <Text style={s.playerTime}>{formatTime(playerPosition)} / {formatTime(playerDuration)}</Text>
+                <TouchableOpacity onPress={toggleMute} style={s.miniControl}>
+                  <Text style={s.miniControlText}>{muted ? '🔇' : '🔊'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {playerError ? (
@@ -647,6 +707,14 @@ const s = StyleSheet.create({
   people: { backgroundColor: '#15131d', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
   peopleText: { color: '#c4b5fd', fontWeight: '800' },
   player: { height: 220, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000' },
+  playerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
+  playerBottom: { paddingHorizontal: 12, paddingBottom: 10, paddingTop: 30, backgroundColor: 'rgba(0,0,0,0.38)' },
+  progressTrack: { height: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.28)', overflow: 'hidden' },
+  progressFill: { height: 4, borderRadius: 4, backgroundColor: '#a78bfa' },
+  playerMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
+  playerTime: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  miniControl: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.48)', alignItems: 'center', justifyContent: 'center' },
+  miniControlText: { fontSize: 15 },
   error: { backgroundColor: '#35151c', borderRadius: 14, padding: 12, marginTop: 10 },
   errorTitle: { color: '#fff', fontWeight: '800' },
   errorText: { color: '#c99ca5', fontSize: 12, lineHeight: 18, marginTop: 3 },
@@ -663,6 +731,7 @@ const s = StyleSheet.create({
   controlSub: { color: '#777481', fontSize: 9 },
   play: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
   playText: { color: '#fff', fontSize: 23, fontWeight: '900' },
+  controlDisabled: { opacity: 0.45 },
   disabled: { opacity: 0.5 },
   joinCard: { backgroundColor: '#111019', borderRadius: 18, padding: 15, marginTop: 8 },
   joinTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
