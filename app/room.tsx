@@ -11,7 +11,8 @@ type PlayerMessage =
   | { type: 'ready' }
   | { type: 'state'; state: number; position: number }
   | { type: 'seek'; position: number }
-  | { type: 'error'; code: number }\n  | { type: 'autoplayBlocked' };
+  | { type: 'error'; code: number }
+  | { type: 'autoplayBlocked' };
 const DRIFT_TOLERANCE_SECONDS=0.75;
 
 export default function RoomScreen(){
