@@ -22,6 +22,23 @@ function touch() {
   return { updatedAt: serverTimestamp(), version: increment(1) };
 }
 
+function cleanQueueItem(item: QueueItem): QueueItem {
+  const cleaned: QueueItem = {
+    id: item.id,
+    videoId: item.videoId,
+    title: item.title,
+    channelTitle: item.channelTitle,
+    thumbnail: item.thumbnail,
+    kind: item.kind,
+  };
+  if (item.duration) cleaned.duration = item.duration;
+  return cleaned;
+}
+
+function cleanQueue(items: QueueItem[]) {
+  return items.map(cleanQueueItem);
+}
+
 export async function createRoom(code: string, hostId: string, mode: RoomMode = 'mixed') {
   const ref = roomRef(code);
   await runTransaction(db, async transaction => {
@@ -41,7 +58,10 @@ export async function createRoom(code: string, hostId: string, mode: RoomMode = 
 }
 
 export async function updateRoom(code: string, data: Partial<Room>) {
-  await updateDoc(roomRef(code), { ...data, ...touch() });
+  const cleaned = Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined),
+  ) as Partial<Room>;
+  await updateDoc(roomRef(code), { ...cleaned, ...touch() });
 }
 
 export async function updatePlayback(
@@ -67,15 +87,15 @@ export async function appendQueueItems(code: string, items: QueueItem[]) {
       : [];
     const byId = new Map(existing.map(item => [item.id, item]));
     for (const item of items) {
-      if (!byId.has(item.id)) byId.set(item.id, item);
+      if (!byId.has(item.id)) byId.set(item.id, cleanQueueItem(item));
     }
     const queue = Array.from(byId.values()).slice(0, MAX_QUEUE_ITEMS);
-    transaction.update(ref, { queue, ...touch() });
+    transaction.update(ref, { queue: cleanQueue(queue), ...touch() });
   });
 }
 
 export async function setQueue(code: string, queue: QueueItem[]) {
-  const deduped = Array.from(new Map(queue.map(item => [item.id, item])).values()).slice(0, MAX_QUEUE_ITEMS);
+  const deduped = Array.from(new Map(cleanQueue(queue).map(item => [item.id, item])).values()).slice(0, MAX_QUEUE_ITEMS);
   await updateRoom(code, { queue: deduped });
 }
 
@@ -106,7 +126,7 @@ export async function moveQueueItem(code: string, itemId: string, direction: 'up
     const next = direction === 'up' ? index - 1 : index + 1;
     if (index < 0 || next < 0 || next >= queue.length) return;
     [queue[index], queue[next]] = [queue[next], queue[index]];
-    transaction.update(ref, { queue, ...touch() });
+    transaction.update(ref, { queue: cleanQueue(queue), ...touch() });
   });
 }
 
