@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -24,6 +25,7 @@ import { auth } from '../firebase';
 import {
   addQueueItem,
   appendQueueItems,
+  deleteRoomDeep,
   joinRoom,
   leaveRoom,
   moveQueueItem,
@@ -278,7 +280,8 @@ export default function RoomScreen() {
   };
 
   useEffect(() => {
-    if (!room || !current || !playerReady) return;
+    const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
+    if (!room || !current || !activeReady) return;
     syncPlayer();
     if (canControl) return;
     const timer = setInterval(syncPlayer, 2000);
@@ -382,7 +385,8 @@ export default function RoomScreen() {
   }
 
   function seekToFraction(fraction: number) {
-    if (!playerReady || !playerDuration || !canControl) return;
+    const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
+    if (!activeReady || !playerDuration || !canControl) return;
     const target = Math.max(0, Math.min(playerDuration, playerDuration * fraction));
     const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
     activeRef.current?.injectJavaScript(
@@ -498,6 +502,26 @@ export default function RoomScreen() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not leave room.');
     }
+  }
+
+  function confirmEndRoom() {
+    if (!isHost || !auth.currentUser) return;
+    Alert.alert(
+      'End room?',
+      'This permanently removes the room, participants and chat history from Firestore.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'End room',
+          style: 'destructive',
+          onPress: () => {
+            void deleteRoomDeep(roomCode, auth.currentUser!.uid)
+              .then(() => router.replace('/'))
+              .catch(e => setError(e instanceof Error ? e.message : 'Could not end the room.'));
+          },
+        },
+      ],
+    );
   }
 
   const html = useMemo(
@@ -678,7 +702,8 @@ export default function RoomScreen() {
             </View>
           ) : null}
         </View>
-      ) : null
+      ) : null}
+
       {playerError ? (
         <View style={s.error}>
           <Text style={s.errorTitle}>YouTube player error {playerError}</Text>
@@ -1008,6 +1033,11 @@ export default function RoomScreen() {
             <TouchableOpacity style={s.shareRoomBtn} onPress={() => void shareRoom()}>
               <Text style={s.shareRoomText}>Share room code</Text>
             </TouchableOpacity>
+            {isHost ? (
+              <TouchableOpacity style={s.endRoomBtn} onPress={confirmEndRoom}>
+                <Text style={s.endRoomText}>End room & delete data</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -1145,5 +1175,7 @@ const s = StyleSheet.create({
   accessToggleText: { color: '#c4b5fd', fontSize: 9, fontWeight: '900' },
   shareRoomBtn: { backgroundColor: '#8b5cf6', borderRadius: 13, padding: 13, alignItems: 'center', marginTop: 12 },
   shareRoomText: { color: '#fff', fontWeight: '900' },
+  endRoomBtn: { borderWidth: 1, borderColor: '#5b2835', borderRadius: 13, padding: 12, alignItems: 'center', marginTop: 8 },
+  endRoomText: { color: '#f2a6b2', fontWeight: '900' },
 });
 
