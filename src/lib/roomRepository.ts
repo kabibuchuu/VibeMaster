@@ -125,10 +125,15 @@ export async function setCurrentItem(
 
 export async function joinRoom(code: string, userId: string, name: string) {
   const clean = name.trim().slice(0, 32) || 'Guest';
-  await setDoc(participantRef(code, userId), {
-    name: clean,
-    joinedAt: Date.now(),
-  }, { merge: true });
+  const ref = participantRef(code, userId);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (snapshot.exists()) {
+      transaction.update(ref, { name: clean });
+      return;
+    }
+    transaction.set(ref, { name: clean, joinedAt: Date.now() });
+  });
 }
 
 export async function leaveRoom(code: string, userId: string) {
