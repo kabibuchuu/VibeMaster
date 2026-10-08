@@ -19,7 +19,7 @@ export default function Create(){
     setBusy(true);setError('');
     try{
       let queue:QueueItem[]=[];
-      if(params.playlistId) queue=(await getPlaylistItems(String(params.playlistId))).slice(0,200);
+      if(params.playlistId) queue=(await getPlaylistItems(String(params.playlistId))).slice(0,50);
       else if(params.videoId) queue=[{id:String(params.videoId),videoId:String(params.videoId),title:String(params.title??'Selected video'),channelTitle:String(params.channel??'YouTube'),thumbnail:String(params.thumbnail??''),duration:params.duration?String(params.duration):undefined,kind:params.kind==='music'?'music':'video'}];
 
       let createdCode='';
