@@ -12,7 +12,11 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  StatusBar,
 } from 'react-native';
+import * as Brightness from 'expo-brightness';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
@@ -69,7 +73,7 @@ function playerHtml(videoId: string) {
     'function onYouTubeIframeAPIReady(){',
     'vmPlayer=new YT.Player("player",{',
     'width:"100%",height:"100%",videoId:"' + safeId + '",',
-    'playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,fs:1,enablejsapi:1,origin:"' + APP_ORIGIN + '",widget_referrer:"' + APP_REFERRER + '"},',
+    'playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,fs:0,iv_load_policy:3,enablejsapi:1,origin:"' + APP_ORIGIN + '",widget_referrer:"' + APP_REFERRER + '"},',
     'events:{',
     'onReady:function(){send({type:"ready"});setInterval(function(){if(vmPlayer){send({type:"progress",position:Number(vmPlayer.getCurrentTime()||0),duration:Number(vmPlayer.getDuration()||0)});}},500);},',
     'onError:function(e){send({type:"error",code:e.data});},',
@@ -119,7 +123,14 @@ export default function RoomScreen() {
   const [muted, setMuted] = useState(false);
   const [progressWidth, setProgressWidth] = useState(0);
   const [manageOpen, setManageOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [brightness, setBrightness] = useState(0.7);
+  const [fullscreenPlayerReady, setFullscreenPlayerReady] = useState(false);
   const playerRef = useRef<WebView>(null);
+  const fullscreenPlayerRef = useRef<WebView>(null);
+  const originalBrightnessRef = useRef<number | null>(null);
   const addedRef = useRef('');
   const isHost = room?.hostId === auth.currentUser?.uid;
   const canControl = Boolean(isHost || (auth.currentUser?.uid && room?.controllerIds?.includes(auth.currentUser.uid)));
@@ -210,12 +221,45 @@ export default function RoomScreen() {
 
   useEffect(() => {
     setPlayerReady(false);
+    setFullscreenPlayerReady(false);
     setPlayerError(null);
     setAutoplayBlocked(false);
   }, [current?.id]);
 
+  useEffect(() => {
+    let mounted = true;
+    void Brightness.getBrightnessAsync().then(value => {
+      if (mounted) {
+        originalBrightnessRef.current = value;
+        setBrightness(value);
+      }
+    }).catch(() => {});
+    return () => {
+      mounted = false;
+      StatusBar.setHidden(false, 'none');
+      void ScreenOrientation.unlockAsync().catch(() => {});
+      if (originalBrightnessRef.current != null) {
+        void Brightness.setBrightnessAsync(originalBrightnessRef.current).catch(() => {});
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (fullScreen) {
+      setFullscreenPlayerReady(false);
+      StatusBar.setHidden(true, 'fade');
+      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+    } else {
+      setPlayerReady(false);
+      StatusBar.setHidden(false, 'fade');
+      void ScreenOrientation.unlockAsync().catch(() => {});
+    }
+  }, [fullScreen]);
+
   const syncPlayer = () => {
-    if (!room || !current || !playerReady) return;
+    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
+    const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
+    if (!room || !current || !activeReady) return;
     const elapsed = room.status === 'playing'
       ? Math.max(0, (Date.now() - room.updatedAt) / 1000)
       : 0;
@@ -230,7 +274,7 @@ export default function RoomScreen() {
       'if(state!==' + desiredState + '){' + (desiredState === 1 ? 'window.vmPlayer.playVideo();' : 'window.vmPlayer.pauseVideo();') + '}',
       '}true;',
     ].join('');
-    playerRef.current?.injectJavaScript(script);
+    activeRef.current?.injectJavaScript(script);
   };
 
   useEffect(() => {
@@ -239,7 +283,7 @@ export default function RoomScreen() {
     if (canControl) return;
     const timer = setInterval(syncPlayer, 2000);
     return () => clearInterval(timer);
-  }, [room?.version, room?.status, room?.position, room?.updatedAt, current?.id, playerReady, canControl]);
+  }, [room?.version, room?.status, room?.position, room?.updatedAt, current?.id, playerReady, fullscreenPlayerReady, fullScreen, canControl]);
 
   async function publish(status: Room['status'], position: number) {
     if (!current || !canControl) return;
@@ -254,12 +298,13 @@ export default function RoomScreen() {
     }
   }
 
-  async function handlePlayerMessage(event: WebViewMessageEvent) {
+  async function handlePlayerMessage(event: WebViewMessageEvent, isFullscreenPlayer = false) {
     try {
       const message = JSON.parse(event.nativeEvent.data) as PlayerMessage;
 
       if (message.type === 'ready') {
-        setPlayerReady(true);
+        if (isFullscreenPlayer) setFullscreenPlayerReady(true);
+        else setPlayerReady(true);
         setPlayerError(null);
         return;
       }
@@ -309,21 +354,38 @@ export default function RoomScreen() {
   }
 
   function command(script: string) {
-    playerRef.current?.injectJavaScript(
+    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
+    activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.' + script + '}true;',
     );
+  }
+
+  function setPlayerVolume(value: number) {
+    const next = Math.max(0, Math.min(1, value));
+    setVolume(next);
+    setMuted(next === 0);
+    command('setVolume(' + Math.round(next * 100) + ');');
+    if (next > 0) command('unMute();');
+  }
+
+  function setScreenBrightness(value: number) {
+    const next = Math.max(0.05, Math.min(1, value));
+    setBrightness(next);
+    void Brightness.setBrightnessAsync(next).catch(() => {});
   }
 
   function toggleMute() {
     const nextMuted = !muted;
     setMuted(nextMuted);
     command(nextMuted ? 'mute();' : 'unMute();');
+    if (!nextMuted && volume === 0) setPlayerVolume(0.8);
   }
 
   function seekToFraction(fraction: number) {
     if (!playerReady || !playerDuration || !canControl) return;
     const target = Math.max(0, Math.min(playerDuration, playerDuration * fraction));
-    playerRef.current?.injectJavaScript(
+    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
+    activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.seekTo(' + target + ',true);window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:' + target + '}));}true;'
     );
   }
@@ -337,7 +399,8 @@ export default function RoomScreen() {
 
   function seek(delta: number) {
     if (!canControl) return;
-    playerRef.current?.injectJavaScript(
+    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
+    activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){' +
       'var target=Math.max(0,Number(window.vmPlayer.getCurrentTime()||0)+' + delta + ');' +
       'window.vmPlayer.seekTo(target,true);' +
@@ -484,81 +547,138 @@ export default function RoomScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={s.player}>
-        <WebView
-          key={current?.id ?? 'empty-player'}
-          ref={playerRef}
-          source={{ html, baseUrl: APP_REFERRER }}
-          originWhitelist={['*']}
-          javaScriptEnabled
-          domStorageEnabled
-          allowsInlineMediaPlayback
-          allowsFullscreenVideo
-          mediaPlaybackRequiresUserAction={false}
-          onMessage={handlePlayerMessage}
-          onHttpError={() => setError('The YouTube player could not load. Check your connection and try again.')}
-          startInLoadingState
-        />
-        {current ? (
-          <View pointerEvents="box-none" style={s.playerOverlay}>
-            <View style={s.playerTopRow}>
-              <View style={s.playerPill}>
-                <Text style={s.playerPillText}>{room.mode === 'music' ? '♪ MUSIC' : '▶ VIDEO'}</Text>
-              </View>
-              <View style={s.playerTopRight}>
-                <View style={s.playerPill}>
-                  <Text style={s.playerPillText}>{status}</Text>
-                </View>
-                <TouchableOpacity onPress={toggleMute} style={s.miniControl}>
-                  <Text style={s.miniControlText}>{muted ? '🔇' : '🔊'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            {canControl ? (
-              <View style={s.videoCenterControls}>
-                <TouchableOpacity style={s.videoSkip} onPress={() => seek(-10)} disabled={!playerReady}>
-                  <Text style={s.videoSkipIcon}>↶</Text>
-                  <Text style={s.videoSkipText}>10</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={s.videoPlay}
-                  onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')}
-                  disabled={!playerReady}
-                >
-                  <Text style={s.videoPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={s.videoSkip} onPress={() => seek(10)} disabled={!playerReady}>
-                  <Text style={s.videoSkipIcon}>↷</Text>
-                  <Text style={s.videoSkipText}>10</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-            <View pointerEvents="box-none" style={s.playerBottom}>
-              <TouchableOpacity
-                disabled={!canControl || !playerDuration}
-                onPress={event => {
-                  if (!progressWidth) return;
-                  seekToFraction(event.nativeEvent.locationX / progressWidth);
-                }}
-                onLayout={event => setProgressWidth(event.nativeEvent.layout.width)}
-                style={s.progressTrack}
-              >
-                <View
-                  style={[
-                    s.progressFill,
-                    { width: progressWidth ? Math.min(1, playerPosition / Math.max(1, playerDuration)) * progressWidth : 0 },
-                  ]}
-                />
-              </TouchableOpacity>
-              <View style={s.playerMetaRow}>
-                <Text style={s.playerTime}>{formatTime(playerPosition)} / {formatTime(playerDuration)}</Text>
-                <Text style={s.playerHint}>{canControl ? 'ROOM CONTROL' : 'SYNCED'}</Text>
-              </View>
-            </View>
-          </View>
-        ) : null}
-      </View>
+      {!fullScreen ? (
+        <View style={s.player}>
+          {current ? (
+            <WebView
+              key={current.id + '-inline'}
+              ref={playerRef}
+              pointerEvents="none"
+              source={{ html, baseUrl: APP_REFERRER }}
+              originWhitelist={['*']}
+              javaScriptEnabled
+              domStorageEnabled
+              allowsInlineMediaPlayback
+              allowsFullscreenVideo={false}
+              mediaPlaybackRequiresUserAction={false}
+              setSupportMultipleWindows={false}
+              onShouldStartLoadWithRequest={request => !/^(intent:|vnd\.youtube:|youtube:|market:)/i.test(request.url)}
+              onMessage={event => void handlePlayerMessage(event, false)}
+              onHttpError={() => setError('The YouTube player could not load. Check your connection and try again.')}
+              startInLoadingState
+            />
+          ) : (
+            <View style={s.emptyPlayer}><Text style={s.emptyPlayerText}>Add something to start the vibe.</Text></View>
+          )}
+        </View>
+      ) : null}
 
+      {current ? (
+        <View style={s.playerControlPanel}>
+          <View style={s.playerIdentityRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.playerEyebrow}>{room.mode === 'music' ? 'MUSIC' : 'VIDEO'} · {status}</Text>
+              <Text numberOfLines={1} style={s.playerTitle}>{current.title}</Text>
+              <Text numberOfLines={1} style={s.playerChannel}>{current.channelTitle}</Text>
+            </View>
+            <TouchableOpacity style={s.iconButton} onPress={() => setSettingsOpen(value => !value)}>
+              <Text style={s.iconButtonText}>⚙</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.iconButton} onPress={() => setFullScreen(true)}>
+              <Text style={s.iconButtonText}>⛶</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            disabled={!canControl || !playerDuration}
+            onPress={event => {
+              if (!progressWidth) return;
+              seekToFraction(event.nativeEvent.locationX / progressWidth);
+            }}
+            onLayout={event => setProgressWidth(event.nativeEvent.layout.width)}
+            style={s.progressTrack}
+          >
+            <View
+              style={[
+                s.progressFill,
+                { width: progressWidth ? Math.min(1, playerPosition / Math.max(1, playerDuration)) * progressWidth : 0 },
+              ]}
+            />
+          </TouchableOpacity>
+
+          <View style={s.playerTimeRow}>
+            <Text style={s.playerTime}>{formatTime(playerPosition)} / {formatTime(playerDuration)}</Text>
+            <Text style={s.playerAccess}>{canControl ? 'PLAYBACK ACCESS' : 'SYNCED'}</Text>
+          </View>
+
+          {canControl ? (
+            <View style={s.compactControls}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!playerReady && !fullscreenPlayerReady}>
+                <Text style={s.compactControlText}>⏮</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!playerReady && !fullscreenPlayerReady}>
+                <Text style={s.compactControlText}>↶</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.mainPlay, (!playerReady && !fullscreenPlayerReady) && s.disabled]}
+                onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')}
+                disabled={(!playerReady && !fullscreenPlayerReady) || !current}
+              >
+                <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!playerReady && !fullscreenPlayerReady}>
+                <Text style={s.compactControlText}>↷</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!playerReady && !fullscreenPlayerReady}>
+                <Text style={s.compactControlText}>⏭</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {settingsOpen ? (
+            <View style={s.settingsPanel}>
+              <View style={s.settingRow}>
+                <Text style={s.settingLabel}>Volume</Text>
+                <Text style={s.settingValue}>{Math.round(volume * 100)}%</Text>
+              </View>
+              <Slider
+                value={volume}
+                minimumValue={0}
+                maximumValue={1}
+                minimumTrackTintColor="#a78bfa"
+                maximumTrackTintColor="#3a3544"
+                thumbTintColor="#a78bfa"
+                onValueChange={setPlayerVolume}
+              />
+              {current.kind === 'video' ? (
+                <>
+                  <View style={s.settingRow}>
+                    <Text style={s.settingLabel}>Brightness</Text>
+                    <Text style={s.settingValue}>{Math.round(brightness * 100)}%</Text>
+                  </View>
+                  <Slider
+                    value={brightness}
+                    minimumValue={0.05}
+                    maximumValue={1}
+                    minimumTrackTintColor="#a78bfa"
+                    maximumTrackTintColor="#3a3544"
+                    thumbTintColor="#a78bfa"
+                    onValueChange={setScreenBrightness}
+                  />
+                </>
+              ) : null}
+              <View style={s.settingButtons}>
+                <TouchableOpacity style={s.settingButton} onPress={toggleMute}>
+                  <Text style={s.settingButtonText}>{muted ? 'Unmute' : 'Mute'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={s.settingButton} onPress={() => setFullScreen(true)}>
+                  <Text style={s.settingButtonText}>Fullscreen</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+        </View>
+      ) : null
       {playerError ? (
         <View style={s.error}>
           <Text style={s.errorTitle}>YouTube player error {playerError}</Text>
@@ -596,37 +716,11 @@ export default function RoomScreen() {
         <Text style={s.live}>{status}</Text>
       </View>
 
-      {canControl ? (
-        <View style={s.controls}>
-          <TouchableOpacity style={s.control} onPress={() => void changeTrack(-1)} disabled={!playerReady}>
-            <Text style={s.controlText}>⏮</Text>
-            <Text style={s.controlSub}>PREV</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.control} onPress={() => seek(-10)} disabled={!playerReady}>
-            <Text style={s.controlText}>↶</Text>
-            <Text style={s.controlSub}>10s</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.play, !playerReady && s.disabled]}
-            onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')}
-            disabled={!playerReady || !current}
-          >
-            <Text style={s.playText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.control} onPress={() => seek(10)} disabled={!playerReady}>
-            <Text style={s.controlText}>↷</Text>
-            <Text style={s.controlSub}>10s</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.control} onPress={() => void changeTrack(1)} disabled={!playerReady}>
-            <Text style={s.controlText}>⏭</Text>
-            <Text style={s.controlSub}>NEXT</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
+      {!canControl ? (
         <View style={s.viewerHint}>
           <Text style={s.viewerHintText}>{room.status === 'playing' ? 'SYNCED WITH ROOM' : 'ROOM PAUSED'}</Text>
         </View>
-      )}
+      ) : null}
 
       {!isHost && !joined ? (
         <View style={s.joinCard}>
@@ -735,6 +829,107 @@ export default function RoomScreen() {
         ) : null}
       </ScrollView>
 
+      <Modal
+        visible={fullScreen && Boolean(current)}
+        animationType="fade"
+        supportedOrientations={['landscape']}
+        onRequestClose={() => setFullScreen(false)}
+      >
+        <View style={s.fullscreenRoot}>
+          <View style={s.fullscreenHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.fullscreenKicker}>{room.mode === 'music' ? 'MUSIC' : 'VIDEO'} · {status}</Text>
+              <Text numberOfLines={1} style={s.fullscreenTitle}>{current?.title}</Text>
+              <Text numberOfLines={1} style={s.fullscreenChannel}>{current?.channelTitle}</Text>
+            </View>
+            <TouchableOpacity style={s.fullscreenClose} onPress={() => setFullScreen(false)}>
+              <Text style={s.fullscreenCloseText}>×</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={s.fullscreenVideo}>
+            {current ? (
+              <WebView
+                key={current.id + '-fullscreen'}
+                ref={fullscreenPlayerRef}
+                pointerEvents="none"
+                source={{ html, baseUrl: APP_REFERRER }}
+                originWhitelist={['*']}
+                javaScriptEnabled
+                domStorageEnabled
+                allowsInlineMediaPlayback
+                allowsFullscreenVideo={false}
+                mediaPlaybackRequiresUserAction={false}
+                setSupportMultipleWindows={false}
+                onShouldStartLoadWithRequest={request => !/^(intent:|vnd\.youtube:|youtube:|market:)/i.test(request.url)}
+                onMessage={event => void handlePlayerMessage(event, true)}
+                onHttpError={() => setError('The YouTube player could not load. Check your connection and try again.')}
+                startInLoadingState
+              />
+            ) : null}
+          </View>
+
+          <View style={s.fullscreenControls}>
+            <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!canControl}>
+              <Text style={s.compactControlText}>⏮</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!canControl}>
+              <Text style={s.compactControlText}>↶</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.mainPlay} onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')} disabled={!canControl}>
+              <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!canControl}>
+              <Text style={s.compactControlText}>↷</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!canControl}>
+              <Text style={s.compactControlText}>⏭</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.iconButton} onPress={() => setSettingsOpen(value => !value)}>
+              <Text style={s.iconButtonText}>⚙</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            disabled={!canControl || !playerDuration}
+            onPress={event => {
+              if (!progressWidth) return;
+              seekToFraction(event.nativeEvent.locationX / progressWidth);
+            }}
+            onLayout={event => setProgressWidth(event.nativeEvent.layout.width)}
+            style={s.fullscreenProgress}
+          >
+            <View style={[s.progressFill, { width: progressWidth ? Math.min(1, playerPosition / Math.max(1, playerDuration)) * progressWidth : 0 }]} />
+          </TouchableOpacity>
+          <View style={s.fullscreenTimeRow}>
+            <Text style={s.playerTime}>{formatTime(playerPosition)} / {formatTime(playerDuration)}</Text>
+            <Text style={s.playerAccess}>{canControl ? 'ROOM CONTROL' : 'SYNCED'}</Text>
+          </View>
+
+          {settingsOpen ? (
+            <View style={s.fullscreenSettings}>
+              <View style={s.settingRow}>
+                <Text style={s.settingLabel}>Volume</Text>
+                <Text style={s.settingValue}>{Math.round(volume * 100)}%</Text>
+              </View>
+              <Slider value={volume} minimumValue={0} maximumValue={1} minimumTrackTintColor="#a78bfa" maximumTrackTintColor="#3a3544" thumbTintColor="#a78bfa" onValueChange={setPlayerVolume} />
+              {current?.kind === 'video' ? (
+                <>
+                  <View style={s.settingRow}>
+                    <Text style={s.settingLabel}>Brightness</Text>
+                    <Text style={s.settingValue}>{Math.round(brightness * 100)}%</Text>
+                  </View>
+                  <Slider value={brightness} minimumValue={0.05} maximumValue={1} minimumTrackTintColor="#a78bfa" maximumTrackTintColor="#3a3544" thumbTintColor="#a78bfa" onValueChange={setScreenBrightness} />
+                </>
+              ) : null}
+              <TouchableOpacity style={s.settingButton} onPress={toggleMute}>
+                <Text style={s.settingButtonText}>{muted ? 'Unmute' : 'Mute'}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
+
       <Modal visible={chatOpen && joined} transparent animationType="slide" onRequestClose={() => setChatOpen(false)} statusBarTranslucent>
         <KeyboardAvoidingView style={s.chatKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={s.chatBackdrop}>
@@ -834,25 +1029,44 @@ const s = StyleSheet.create({
   people: { backgroundColor: '#15131d', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
   peopleText: { color: '#c4b5fd', fontWeight: '800' },
   player: { height: 220, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000' },
-  playerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between' },
-  playerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10 },
-  playerTopRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  playerPill: { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 },
-  playerPillText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  videoCenterControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 28 },
-  videoSkip: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
-  videoSkipIcon: { color: '#fff', fontSize: 18, lineHeight: 18 },
-  videoSkipText: { color: '#fff', fontSize: 8, fontWeight: '900', marginTop: -1 },
-  videoPlay: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
-  videoPlayText: { color: '#fff', fontSize: 25, fontWeight: '900' },
-  playerBottom: { paddingHorizontal: 12, paddingBottom: 9, paddingTop: 22, backgroundColor: 'rgba(0,0,0,0.42)' },
-  progressTrack: { height: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.28)', overflow: 'hidden' },
-  progressFill: { height: 4, borderRadius: 4, backgroundColor: '#a78bfa' },
-  playerMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
-  playerTime: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  playerHint: { color: '#c4b5fd', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  miniControl: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.48)', alignItems: 'center', justifyContent: 'center' },
-  miniControlText: { fontSize: 15 },
+  emptyPlayer: { flex: 1, backgroundColor: '#0b0a10', alignItems: 'center', justifyContent: 'center' },
+  emptyPlayerText: { color: '#67636f', fontSize: 12 },
+  playerControlPanel: { backgroundColor: '#111019', borderRadius: 18, marginTop: 10, padding: 13, borderWidth: 1, borderColor: '#201d28' },
+  playerIdentityRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  playerEyebrow: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
+  playerTitle: { color: '#fff', fontSize: 15, fontWeight: '900', marginTop: 3 },
+  playerChannel: { color: '#777481', fontSize: 11, marginTop: 2 },
+  iconButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
+  iconButtonText: { color: '#dcd5e7', fontSize: 19 },
+  progressTrack: { height: 5, borderRadius: 5, backgroundColor: '#302b38', overflow: 'hidden', marginTop: 12 },
+  progressFill: { height: 5, borderRadius: 5, backgroundColor: '#a78bfa' },
+  playerTimeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
+  playerTime: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  playerAccess: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  compactControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, paddingTop: 10 },
+  compactControl: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
+  compactControlText: { color: '#eee', fontSize: 20, fontWeight: '800' },
+  mainPlay: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
+  mainPlayText: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  settingsPanel: { marginTop: 12, backgroundColor: '#0b0a10', borderRadius: 14, padding: 12 },
+  settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
+  settingLabel: { color: '#dcd5e7', fontSize: 12, fontWeight: '800' },
+  settingValue: { color: '#a78bfa', fontSize: 11, fontWeight: '900' },
+  settingButtons: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  settingButton: { flex: 1, backgroundColor: '#201d27', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 8 },
+  settingButtonText: { color: '#cfc2ed', fontSize: 11, fontWeight: '900' },
+  fullscreenRoot: { flex: 1, backgroundColor: '#050509', paddingHorizontal: 18, paddingVertical: 12 },
+  fullscreenHeader: { flexDirection: 'row', alignItems: 'center', paddingBottom: 8 },
+  fullscreenKicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
+  fullscreenTitle: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 2 },
+  fullscreenChannel: { color: '#777481', fontSize: 11, marginTop: 2 },
+  fullscreenClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
+  fullscreenCloseText: { color: '#fff', fontSize: 25, lineHeight: 27 },
+  fullscreenVideo: { flex: 1, backgroundColor: '#000', borderRadius: 16, overflow: 'hidden' },
+  fullscreenControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18, paddingVertical: 9 },
+  fullscreenProgress: { height: 5, borderRadius: 5, backgroundColor: '#302b38', overflow: 'hidden' },
+  fullscreenTimeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  fullscreenSettings: { backgroundColor: '#111019', borderRadius: 14, padding: 12, marginTop: 5 },
   error: { backgroundColor: '#35151c', borderRadius: 14, padding: 12, marginTop: 10 },
   errorTitle: { color: '#fff', fontWeight: '800' },
   errorText: { color: '#c99ca5', fontSize: 12, lineHeight: 18, marginTop: 3 },
