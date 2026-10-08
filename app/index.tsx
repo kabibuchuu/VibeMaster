@@ -3,14 +3,26 @@ import { ActivityIndicator, SafeAreaView, StyleSheet, Text, TextInput, Touchable
 import { router } from 'expo-router';
 import { ensureAnonymousAuth, watchAuth } from '../src/lib/auth';
 
-export default function Home(){
- const [code,setCode]=useState('');
- const [ready,setReady]=useState(false);
- useEffect(()=>{const u=watchAuth(()=>setReady(true)); ensureAnonymousAuth().catch(console.error); return u;},[]);
- if(!ready)return <SafeAreaView style={s.center}><ActivityIndicator/><Text style={s.muted}>Connecting…</Text></SafeAreaView>;
- return <SafeAreaView style={s.container}><View style={s.hero}><Text style={s.logo}>VibeMaster</Text><Text style={s.subtitle}>Listen together. Stay in sync.</Text></View>
- <View style={s.card}><Text style={s.heading}>Join a room</Text><TextInput value={code} onChangeText={v=>setCode(v.toUpperCase())} placeholder="ROOM CODE" placeholderTextColor="#777" autoCapitalize="characters" style={s.input} maxLength={8}/>
- <TouchableOpacity style={s.primary} onPress={()=>code.trim()&&router.push({pathname:'/room',params:{code:code.trim()}})}><Text style={s.primaryText}>Join Room</Text></TouchableOpacity>
- <Text style={s.or}>or</Text><TouchableOpacity style={s.secondary} onPress={()=>router.push('/create')}><Text style={s.secondaryText}>Create a Room</Text></TouchableOpacity></View></SafeAreaView>
+export default function Home() {
+  const [code, setCode] = useState('');
+  const [ready, setReady] = useState(false);
+  useEffect(() => { const unsub = watchAuth(() => setReady(true)); ensureAnonymousAuth().catch(console.error); return unsub; }, []);
+  if (!ready) return <SafeAreaView style={s.center}><ActivityIndicator/><Text style={s.muted}>Getting your vibe ready…</Text></SafeAreaView>;
+  return (
+    <SafeAreaView style={s.c}>
+      <View style={s.hero}>
+        <Text style={s.badge}>VIBEMASTER</Text>
+        <Text style={s.title}>Your night.\nYour people.\nYour vibe.</Text>
+        <Text style={s.sub}>Listen, watch and discover together — perfectly in sync.</Text>
+      </View>
+      <TouchableOpacity style={s.search} onPress={() => router.push('/search')}><Text style={s.searchIcon}>⌕</Text><Text style={s.placeholder}>Search songs, videos & playlists</Text></TouchableOpacity>
+      <View style={s.quick}>
+        <TouchableOpacity style={s.quickCard} onPress={() => router.push({pathname:'/search',params:{kind:'music'}})}><Text style={s.qIcon}>🎵</Text><Text style={s.qTitle}>Music</Text><Text style={s.qSub}>Find something to feel</Text></TouchableOpacity>
+        <TouchableOpacity style={s.quickCard} onPress={() => router.push({pathname:'/search',params:{kind:'video'}})}><Text style={s.qIcon}>🎬</Text><Text style={s.qTitle}>Videos</Text><Text style={s.qSub}>Find something to watch</Text></TouchableOpacity>
+      </View>
+      <View style={s.join}><Text style={s.joinTitle}>Joining friends?</Text><View style={s.joinRow}><TextInput value={code} onChangeText={v=>setCode(v.toUpperCase())} placeholder="ROOM CODE" placeholderTextColor="#555" autoCapitalize="characters" style={s.input} maxLength={8}/><TouchableOpacity style={s.joinBtn} onPress={()=>code.trim()&&router.push({pathname:'/room',params:{code:code.trim()}})}><Text style={s.joinText}>Join</Text></TouchableOpacity></View></View>
+      <TouchableOpacity style={s.create} onPress={()=>router.push('/create')}><Text style={s.createText}>＋ Create a new vibe</Text></TouchableOpacity>
+    </SafeAreaView>
+  );
 }
-const s=StyleSheet.create({container:{flex:1,backgroundColor:'#0b0712',padding:24},center:{flex:1,backgroundColor:'#0b0712',alignItems:'center',justifyContent:'center',gap:10},hero:{marginTop:80,marginBottom:50},logo:{fontSize:42,fontWeight:'800',color:'#a78bfa'},subtitle:{color:'#aaa',fontSize:16,marginTop:8},card:{backgroundColor:'#17111f',padding:20,borderRadius:20},heading:{color:'#fff',fontSize:22,fontWeight:'700',marginBottom:16},input:{backgroundColor:'#0e0a14',color:'#fff',borderRadius:12,padding:16,fontSize:18,letterSpacing:3,marginBottom:12},primary:{backgroundColor:'#7c3aed',padding:16,borderRadius:12,alignItems:'center'},primaryText:{color:'#fff',fontWeight:'700'},or:{color:'#777',textAlign:'center',marginVertical:14},secondary:{borderWidth:1,borderColor:'#555',padding:16,borderRadius:12,alignItems:'center'},secondaryText:{color:'#fff',fontWeight:'600'},muted:{color:'#888'}});
+const s=StyleSheet.create({c:{flex:1,backgroundColor:'#08070d',padding:22},center:{flex:1,backgroundColor:'#08070d',alignItems:'center',justifyContent:'center',gap:10},hero:{marginTop:38},badge:{color:'#a78bfa',fontSize:12,fontWeight:'900',letterSpacing:3},title:{color:'#fff',fontSize:42,fontWeight:'900',lineHeight:46,marginTop:12},sub:{color:'#8d8a98',fontSize:16,lineHeight:23,marginTop:14},search:{height:60,borderRadius:18,backgroundColor:'#15131d',borderWidth:1,borderColor:'#272431',flexDirection:'row',alignItems:'center',paddingHorizontal:17,marginTop:30},searchIcon:{color:'#c4b5fd',fontSize:28,marginRight:10},placeholder:{color:'#777481',fontSize:15},quick:{flexDirection:'row',gap:12,marginTop:14},quickCard:{flex:1,backgroundColor:'#111019',padding:17,borderRadius:20,borderWidth:1,borderColor:'#211e29'},qIcon:{fontSize:25},qTitle:{color:'#fff',fontSize:17,fontWeight:'800',marginTop:12},qSub:{color:'#777481',fontSize:12,marginTop:4},join:{marginTop:26},joinTitle:{color:'#d4d0db',fontWeight:'700',marginBottom:10},joinRow:{flexDirection:'row',gap:10},input:{flex:1,backgroundColor:'#111019',color:'#fff',borderRadius:16,paddingHorizontal:16,fontWeight:'800',letterSpacing:2},joinBtn:{backgroundColor:'#8b5cf6',paddingHorizontal:20,borderRadius:16,justifyContent:'center'},joinText:{color:'#fff',fontWeight:'800'},create:{marginTop:'auto',alignItems:'center',padding:16},createText:{color:'#c4b5fd',fontWeight:'800'}});
