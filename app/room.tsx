@@ -25,6 +25,7 @@ import {
   removeQueueItem,
   sendMessage,
   setCurrentItem,
+  updatePlayback,
   watchMessages,
   watchParticipants,
   watchRoom,
@@ -40,7 +41,8 @@ type PlayerMessage =
   | { type: 'autoplayBlocked' };
 
 const DRIFT_TOLERANCE_SECONDS = 0.75;
-const APP_REFERRER = 'https://com.vibemaster.app/';
+const APP_ORIGIN = 'https://com.vibemaster.app';
+const APP_REFERRER = APP_ORIGIN + '/';
 
 const PLAYER_ERROR_TEXT: Record<number, string> = {
   2: 'YouTube rejected this video ID. Try another result.',
@@ -64,7 +66,7 @@ function playerHtml(videoId: string) {
     'function onYouTubeIframeAPIReady(){',
     'vmPlayer=new YT.Player("player",{',
     'width:"100%",height:"100%",videoId:"' + safeId + '",',
-    'playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,enablejsapi:1,origin:"' + APP_REFERRER + '",widget_referrer:"' + APP_REFERRER + '"},',
+    'playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,enablejsapi:1,origin:"' + APP_ORIGIN + '",widget_referrer:"' + APP_REFERRER + '"},',
     'events:{',
     'onReady:function(){send({type:"ready"});},',
     'onError:function(e){send({type:"error",code:e.data});},',
