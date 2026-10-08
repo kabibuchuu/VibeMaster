@@ -236,13 +236,13 @@ export default function RoomScreen() {
   useEffect(() => {
     if (!room || !current || !playerReady) return;
     syncPlayer();
-    if (isHost) return;
+    if (canControl) return;
     const timer = setInterval(syncPlayer, 2000);
     return () => clearInterval(timer);
-  }, [room?.version, room?.status, room?.position, room?.updatedAt, current?.id, playerReady, isHost]);
+  }, [room?.version, room?.status, room?.position, room?.updatedAt, current?.id, playerReady, canControl]);
 
   async function publish(status: Room['status'], position: number) {
-    if (!current || !isHost) return;
+    if (!current || !canControl) return;
     try {
       await updatePlayback(roomCode, {
         status,
@@ -280,7 +280,7 @@ export default function RoomScreen() {
         return;
       }
 
-      if (!isHost) return;
+      if (!canControl) return;
 
       if (message.type === 'seek') {
         await publish(room?.status === 'playing' ? 'playing' : 'paused', message.position);
@@ -900,5 +900,21 @@ const s = StyleSheet.create({
   sendText: { color: '#fff', fontWeight: '900' },
   leaveBtn: { borderWidth: 1, borderColor: '#3a2730', borderRadius: 12, padding: 12, alignItems: 'center', marginTop: 10 },
   leaveText: { color: '#c99ca5', fontWeight: '800' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.68)', justifyContent: 'flex-end' },
+  accessSheet: { backgroundColor: '#111019', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 18, maxHeight: '72%', borderWidth: 1, borderColor: '#292531' },
+  accessHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  accessTitle: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  accessSub: { color: '#777481', fontSize: 12, marginTop: 4 },
+  closeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
+  closeText: { color: '#fff', fontSize: 24, lineHeight: 26 },
+  accessList: { maxHeight: 330 },
+  accessRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#201d28' },
+  accessName: { color: '#eee', fontSize: 14, fontWeight: '800' },
+  accessRole: { color: '#777481', fontSize: 11, marginTop: 3 },
+  accessToggle: { backgroundColor: '#201d27', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  accessToggleOn: { backgroundColor: '#38235f' },
+  accessToggleText: { color: '#c4b5fd', fontSize: 9, fontWeight: '900' },
+  shareRoomBtn: { backgroundColor: '#8b5cf6', borderRadius: 13, padding: 13, alignItems: 'center', marginTop: 12 },
+  shareRoomText: { color: '#fff', fontWeight: '900' },
 });
 
