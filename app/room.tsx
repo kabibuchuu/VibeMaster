@@ -728,45 +728,56 @@ export default function RoomScreen() {
           <Text style={s.empty}>Add a song or video to build the queue.</Text>
         ) : null}
 
-        {chatOpen && joined ? (
-          <View style={s.chat}>
-            <View style={s.chatHeader}>
-              <Text style={s.section}>CHAT · {messages.length}</Text>
-            </View>
-            <View style={s.messages}>
-              {messages.length ? messages.map(message => (
-                <View key={message.id} style={s.message}>
-                  <Text style={s.messageName}>{message.name}</Text>
-                  <Text style={s.messageText}>{message.text}</Text>
-                </View>
-              )) : (
-                <Text style={s.empty}>Say something to the room.</Text>
-              )}
-            </View>
-            <View style={s.messageRow}>
-              <TextInput
-                value={messageText}
-                onChangeText={setMessageText}
-                placeholder="Message the room…"
-                placeholderTextColor="#66636e"
-                maxLength={280}
-                style={s.messageInput}
-                onSubmitEditing={() => void submitMessage()}
-                returnKeyType="send"
-              />
-              <TouchableOpacity style={s.sendBtn} onPress={() => void submitMessage()}>
-                <Text style={s.sendText}>Send</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : null}
-
         {!isHost && joined ? (
           <TouchableOpacity style={s.leaveBtn} onPress={() => void exitRoom()}>
             <Text style={s.leaveText}>Leave room</Text>
           </TouchableOpacity>
         ) : null}
       </ScrollView>
+
+      <Modal visible={chatOpen && joined} transparent animationType="slide" onRequestClose={() => setChatOpen(false)} statusBarTranslucent>
+        <KeyboardAvoidingView style={s.chatKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={s.chatBackdrop}>
+            <View style={s.chatSheet}>
+              <View style={s.chatHeader}>
+                <View>
+                  <Text style={s.accessTitle}>Room chat</Text>
+                  <Text style={s.accessSub}>{messages.length} messages · live with the room</Text>
+                </View>
+                <TouchableOpacity onPress={() => setChatOpen(false)} style={s.closeBtn}>
+                  <Text style={s.closeText}>×</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={s.messages} contentContainerStyle={s.messageList} keyboardShouldPersistTaps="handled">
+                {messages.length ? messages.map(message => (
+                  <View key={message.id} style={s.message}>
+                    <Text style={s.messageName}>{message.name}</Text>
+                    <Text style={s.messageText}>{message.text}</Text>
+                  </View>
+                )) : (
+                  <Text style={s.empty}>Say something to the room.</Text>
+                )}
+              </ScrollView>
+              <View style={s.messageRow}>
+                <TextInput
+                  value={messageText}
+                  onChangeText={setMessageText}
+                  placeholder="Message the room…"
+                  placeholderTextColor="#66636e"
+                  maxLength={280}
+                  style={s.messageInput}
+                  onSubmitEditing={() => void submitMessage()}
+                  returnKeyType="send"
+                  blurOnSubmit={false}
+                />
+                <TouchableOpacity style={s.sendBtn} onPress={() => void submitMessage()}>
+                  <Text style={s.sendText}>Send</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal visible={manageOpen} transparent animationType="slide" onRequestClose={() => setManageOpen(false)}>
         <View style={s.modalBackdrop}>
@@ -889,8 +900,12 @@ const s = StyleSheet.create({
   primaryBtn: { backgroundColor: '#8b5cf6', paddingHorizontal: 20, paddingVertical: 13, borderRadius: 14, marginTop: 18 },
   primaryBtnText: { color: '#fff', fontWeight: '900' },
   chat: { backgroundColor: '#111019', borderRadius: 16, padding: 12, marginTop: 8, borderWidth: 1, borderColor: '#201d28', overflow: 'hidden' },
+  chatKeyboard: { flex: 1 },
+  chatBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', justifyContent: 'flex-end' },
+  chatSheet: { backgroundColor: '#111019', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, maxHeight: '78%', borderWidth: 1, borderColor: '#292531' },
+  messageList: { paddingBottom: 8 },
   chatHeader: { marginBottom: 6 },
-  messages: { maxHeight: 170, overflow: 'hidden' },
+  messages: { maxHeight: 340 },
   message: { paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#1d1a24' },
   messageName: { color: '#a78bfa', fontSize: 10, fontWeight: '900' },
   messageText: { color: '#e7e3ed', fontSize: 13, marginTop: 2, lineHeight: 18 },
