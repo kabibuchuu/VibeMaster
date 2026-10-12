@@ -88,7 +88,11 @@ export async function setController(code: string, userId: string, enabled: boole
     const next = enabled
       ? Array.from(new Set([...current, userId]))
       : current.filter(id => id !== userId);
-    transaction.update(ref, { controllerIds: next, ...touch() });
+    transaction.update(ref, {
+      controllerIds: next,
+      playbackUpdatedAt: data.playbackUpdatedAt ?? data.updatedAt ?? serverTimestamp(),
+      ...touch(),
+    });
   });
 }
 
@@ -118,7 +122,11 @@ export async function appendQueueItems(code: string, items: QueueItem[]) {
       if (!byId.has(item.id)) byId.set(item.id, cleanQueueItem(item));
     }
     const queue = Array.from(byId.values()).slice(0, MAX_QUEUE_ITEMS);
-    const update: Record<string, unknown> = { queue: cleanQueue(queue), ...touch() };
+    const update: Record<string, unknown> = {
+      queue: cleanQueue(queue),
+      playbackUpdatedAt: snapshot.data().playbackUpdatedAt ?? snapshot.data().updatedAt ?? serverTimestamp(),
+      ...touch(),
+    };
     if (!snapshot.data().currentItemId && queue.length) {
       update.currentItemId = queue[0].id;
       update.status = 'paused';
