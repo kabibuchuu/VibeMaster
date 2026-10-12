@@ -12,10 +12,10 @@
     "build:voice-functions": "npm --prefix functions run build"
   },
   "dependencies": {
-    "@config-plugins/react-native-webrtc": "^12.0.0",
-    "@livekit/react-native": "^2.9.6",
+    "@config-plugins/react-native-webrtc": "^14.0.0",
+    "@livekit/react-native": "^2.12.0",
     "@livekit/react-native-expo-plugin": "^1.0.1",
-    "@livekit/react-native-webrtc": "^125.0.0",
+    "@livekit/react-native-webrtc": "^144.2.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/slider": "5.1.2",
     "expo": "~55.0.0",
@@ -26,7 +26,7 @@
     "expo-router": "~55.0.18",
     "expo-screen-orientation": "~55.0.17",
     "firebase": "^12.0.0",
-    "livekit-client": "^2.15.6",
+    "livekit-client": "^2.19.0",
     "react": "19.2.0",
     "react-native": "0.83.10",
     "react-native-safe-area-context": "~5.6.2",
