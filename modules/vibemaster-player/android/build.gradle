@@ -22,7 +22,7 @@ dependencies {
 
   // BitChord and Metrolist both use this GPL-3.0 InnerTube extraction library.
   // Keep it behind the native source adapter; the JS layer only sees a URL + metadata.
-  implementation 'com.github.MetrolistGroup.innertubex:innertubex:v0.7.0'
+  implementation 'com.github.MetrolistGroup.innertubex:innertubex:v0.6.0'
   implementation 'io.ktor:ktor-client-okhttp:3.5.2'
   implementation 'io.ktor:ktor-client-content-negotiation:3.5.2'
   implementation 'io.ktor:ktor-serialization-kotlinx-json:3.5.2'
