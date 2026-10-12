@@ -127,7 +127,7 @@ internal object YouTubeStreamResolver {
 
         check(stream.sabrBootstrap == null) { "This player build does not support the selected stream transport" }
         val mime = stream.mimeType.orEmpty()
-        val completeMime = if (stream.codecs.isNullOrBlank()) mime else "$mime; codecs=\"\${stream.codecs}\""
+        val completeMime = if (stream.codecs.isNullOrBlank()) mime else mime + "; codecs=\"" + stream.codecs + "\""
         return ResolvedStream(
             videoId = videoId,
             url = stream.audioUrl,
