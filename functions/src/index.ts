@@ -3,6 +3,7 @@ import { defineSecret, defineString } from 'firebase-functions/params';
 import { AccessToken } from 'livekit-server-sdk';
 import { getAuth } from 'firebase-admin/auth';
 import { initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 initializeApp();
 
@@ -23,8 +24,15 @@ export const createVoiceToken = onCall(
       throw new HttpsError('invalid-argument', 'Invalid room code.');
     }
 
-    // Require a real Firebase identity; token signing never happens on the mobile client.
+    // Only members of an existing listening room may mint a voice token.
     await getAuth().getUser(request.auth.uid);
+    const room = await getFirestore().collection('rooms').doc(roomCode).get();
+    const participant = await getFirestore()
+      .collection('rooms').doc(roomCode)
+      .collection('participants').doc(request.auth.uid).get();
+    if (!room.exists || !participant.exists) {
+      throw new HttpsError('permission-denied', 'Join the VibeMaster listening room before joining voice.');
+    }
     const token = new AccessToken(liveKitApiKey.value(), liveKitApiSecret.value(), {
       identity: request.auth.uid,
       name: participantName,
