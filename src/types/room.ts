@@ -20,6 +20,10 @@ export type Room = {
   position: number;
   updatedAt: number;
   playbackUpdatedAt?: number;
+  /** Monotonic playback command revision for stale/out-of-order update rejection. */
+  playbackRevision?: number;
+  /** Client/server timestamp anchor for scheduled starts and shared clock estimation. */
+  playbackStartedAt?: number | null;
   version: number;
   controllerIds: string[];
 };
