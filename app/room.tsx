@@ -530,8 +530,17 @@ export default function RoomScreen() {
   async function togglePlayback() {
     if (!canControl || !current) return;
     const nextStatus: Room['status'] = room?.status === 'playing' ? 'paused' : 'playing';
-    await publish(nextStatus, playerPosition);
-    command(nextStatus === 'playing' ? 'playVideo();' : 'pauseVideo();');
+    await publish(nextStatus, displayedPosition);
+    if (room?.playbackEngine === 'native') {
+      try {
+        if (nextStatus === 'playing') await nativePlayback.resume();
+        else await nativePlayback.pause();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not control native playback.');
+      }
+    } else {
+      command(nextStatus === 'playing' ? 'playVideo();' : 'pauseVideo();');
+    }
   }
 
   function command(script: string) {
@@ -545,6 +554,12 @@ export default function RoomScreen() {
     const next = Math.max(0, Math.min(1, value));
     setVolume(next);
     setMuted(next === 0);
+    if (room?.playbackEngine === 'native') {
+      void nativePlayback.setVolume(next).catch(e =>
+        setError(e instanceof Error ? e.message : 'Could not set native volume.'),
+      );
+      return;
+    }
     command('setVolume(' + Math.round(next * 100) + ');');
     if (next > 0) command('unMute();');
   }
@@ -552,13 +567,26 @@ export default function RoomScreen() {
   function toggleMute() {
     const nextMuted = !muted;
     setMuted(nextMuted);
+    if (room?.playbackEngine === 'native') {
+      void nativePlayback.setVolume(nextMuted ? 0 : (volume === 0 ? 0.8 : volume)).catch(e =>
+        setError(e instanceof Error ? e.message : 'Could not mute native playback.'),
+      );
+      if (!nextMuted && volume === 0) setVolume(0.8);
+      return;
+    }
     command(nextMuted ? 'mute();' : 'unMute();');
     if (!nextMuted && volume === 0) setPlayerVolume(0.8);
   }
 
   function seekToPosition(position: number) {
-    if (!playerReady || !playerDuration || !canControl) return;
-    const target = Math.max(0, Math.min(playerDuration, position));
+    if ((room?.playbackEngine !== 'native' && !playerReady) || !displayedDuration || !canControl) return;
+    const target = Math.max(0, Math.min(displayedDuration, position));
+    if (room?.playbackEngine === 'native') {
+      void nativePlayback.seekTo(Math.round(target * 1000))
+        .then(() => publish(room.status === 'playing' ? 'playing' : 'paused', target))
+        .catch(e => setError(e instanceof Error ? e.message : 'Could not seek native playback.'));
+      return;
+    }
     const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.seekTo(' + target + ',true);window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:' + target + '}));}true;'
@@ -579,6 +607,13 @@ export default function RoomScreen() {
 
   function seek(delta: number) {
     if (!canControl) return;
+    if (room?.playbackEngine === 'native') {
+      const target = Math.max(0, Math.min(displayedDuration || Number.MAX_SAFE_INTEGER, displayedPosition + delta));
+      void nativePlayback.seekTo(Math.round(target * 1000))
+        .then(() => publish(room.status === 'playing' ? 'playing' : 'paused', target))
+        .catch(e => setError(e instanceof Error ? e.message : 'Could not seek native playback.'));
+      return;
+    }
     const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){' +
