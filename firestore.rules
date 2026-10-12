@@ -49,7 +49,7 @@ service cloud.firestore {
         && request.resource.data.mode == resource.data.mode
         && validRoom(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'version', 'controllerIds'
+          'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'playbackUpdatedAt', 'version', 'controllerIds'
         ])
       ) || (
         isController(roomId)
@@ -58,7 +58,7 @@ service cloud.firestore {
         && request.resource.data.controllerIds == resource.data.controllerIds
         && validRoom(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'version'
+          'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'playbackUpdatedAt', 'version'
         ])
       );
 
