@@ -1,4 +1,4 @@
-import { EventEmitter, requireNativeModule } from 'expo-modules-core';
+import { requireNativeModule } from 'expo-modules-core';
 
 export type NativeQueueTrack = { uri: string; title: string; artist: string };
 export type NativePlaybackState = {
@@ -25,7 +25,6 @@ type VibeMasterPlayerNativeModule = {
 };
 
 const nativeModule = requireNativeModule<VibeMasterPlayerNativeModule>('VibeMasterPlayer');
-const eventEmitter = new EventEmitter(nativeModule);
 
 export const nativePlayback = {
   play: (track: NativeQueueTrack) => nativeModule.play(track.uri, track.title, track.artist),
@@ -38,7 +37,7 @@ export const nativePlayback = {
   skipPrevious: () => nativeModule.skipPrevious(),
   getState: () => nativeModule.getState(),
   addPlaybackListener: (listener: (event: NativePlaybackEvent) => void) =>
-    eventEmitter.addListener('playbackStateChanged', listener),
+    nativeModule.addListener('playbackStateChanged', listener),
 };
 
-/** Native Media3 controls; playable URIs must be supplied by a source adapter. */
+/** Native Media3 controls; playable URIs must be supplied by a provider adapter. */
