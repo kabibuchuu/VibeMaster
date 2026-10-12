@@ -18,6 +18,8 @@ jobs:
       - run: npm install
       - run: npm run typecheck
       - run: npx expo-doctor
+      - name: Room sync clock regression tests
+        run: npm run test:room-sync
 
   voice-functions:
     runs-on: ubuntu-latest
