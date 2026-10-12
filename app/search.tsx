@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInpu
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { getPlaylistItems, searchYouTube, youtubeConfigured, type YouTubeResult } from '../src/lib/youtube';
+import { openInYouTubeMusic } from '../src/lib/youtubeMusic';
 import { addQueueItem, appendQueueItems } from '../src/lib/roomRepository';
 import type { QueueItem } from '../src/types/room';
 
@@ -136,18 +137,30 @@ function ResultCard({ item, roomCode }: { item: YouTubeResult; roomCode?: string
   }
 
   return (
-    <TouchableOpacity style={s.resultCard} onPress={() => void selectResult()} disabled={adding} activeOpacity={0.8}>
-      <View style={s.coverWrap}>
-        <Image source={{ uri: item.thumbnail }} style={s.cover} />
-        <View style={s.coverIcon}><Text style={s.coverIconText}>{item.kind === 'playlist' ? '≡' : '♫'}</Text></View>
-      </View>
-      <View style={s.resultMeta}>
-        <Text style={s.resultType}>{item.kind === 'playlist' ? 'PLAYLIST' : 'TRACK'}{item.duration ? '  ·  ' + item.duration : ''}</Text>
-        <Text numberOfLines={2} style={s.resultTitle}>{item.title}</Text>
-        <Text numberOfLines={1} style={s.resultSubtitle}>{adding ? 'Adding to your room…' : item.channelTitle}</Text>
-      </View>
-      <View style={s.addCircle}><Text style={s.addGlyph}>{adding ? '…' : item.kind === 'playlist' ? '›' : '+'}</Text></View>
-    </TouchableOpacity>
+    <View style={s.resultWrap}>
+      <TouchableOpacity style={s.resultCard} onPress={() => void selectResult()} disabled={adding} activeOpacity={0.8}>
+        <View style={s.coverWrap}>
+          <Image source={{ uri: item.thumbnail }} style={s.cover} />
+          <View style={s.coverIcon}><Text style={s.coverIconText}>{item.kind === 'playlist' ? '≡' : '♫'}</Text></View>
+        </View>
+        <View style={s.resultMeta}>
+          <Text style={s.resultType}>{item.kind === 'playlist' ? 'YOUTUBE PLAYLIST' : 'YOUTUBE TRACK'}{item.duration ? '  ·  ' + item.duration : ''}</Text>
+          <Text numberOfLines={2} style={s.resultTitle}>{item.title}</Text>
+          <Text numberOfLines={1} style={s.resultSubtitle}>{adding ? 'Adding to your room…' : item.channelTitle}</Text>
+        </View>
+        <View style={s.addCircle}><Text style={s.addGlyph}>{adding ? '…' : item.kind === 'playlist' ? '›' : '+'}</Text></View>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={s.youtubeMusicButton}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${item.title} in YouTube Music`}
+        onPress={() => void openInYouTubeMusic({ kind: item.kind, id: item.playlistId ?? item.id }).catch(() =>
+          Alert.alert('Could not open YouTube Music', 'Open YouTube Music on your device and try again.')
+        )}
+      >
+        <Text style={s.youtubeMusicButtonText}>▶ Open in YouTube Music</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -174,6 +187,9 @@ const s = StyleSheet.create({
   noticeText: { color: '#aaa3b6', marginTop: 5, lineHeight: 19, fontSize: 12 },
   results: { paddingBottom: 32, gap: 10 },
   loader: { marginTop: 34 },
+  resultWrap: { gap: 5 },
+  youtubeMusicButton: { alignSelf: 'flex-end', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: '#182a20', borderWidth: 1, borderColor: '#315b42' },
+  youtubeMusicButtonText: { color: '#b8f0c9', fontSize: 10, fontWeight: '800' },
   resultCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#13111b', borderRadius: 18, padding: 9, borderWidth: 1, borderColor: '#30283d', minHeight: 92 },
   coverWrap: { width: 76, height: 76, position: 'relative' },
   cover: { width: 76, height: 76, borderRadius: 12, backgroundColor: '#201d27' },
