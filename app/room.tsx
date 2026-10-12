@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -39,7 +40,7 @@ import {
   watchParticipants,
   watchRoom,
 } from '../src/lib/roomRepository';
-import { getPlaylistItems } from '../src/lib/youtube';
+import { getPlaylistItems, searchYouTube, type YouTubeResult } from '../src/lib/youtube';
 import type { Participant, QueueItem, Room, RoomMessage } from '../src/types/room';
 
 type PlayerMessage =
@@ -131,12 +132,13 @@ export default function RoomScreen() {
   const [fullScreen, setFullScreen] = useState(false);
   const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
   const [fullscreenInteraction, setFullscreenInteraction] = useState(0);
+  const [recommendations, setRecommendations] = useState<YouTubeResult[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [addingRecommendation, setAddingRecommendation] = useState<string | null>(null);
   const endedItemRef = useRef('');
   const [volume, setVolume] = useState(1);
   const [brightness, setBrightness] = useState(0.7);
-  const [fullscreenPlayerReady, setFullscreenPlayerReady] = useState(false);
   const playerRef = useRef<WebView>(null);
-  const fullscreenPlayerRef = useRef<WebView>(null);
   const originalBrightnessRef = useRef<number | null>(null);
   const addedRef = useRef('');
   const isHost = room?.hostId === auth.currentUser?.uid;
@@ -144,6 +146,7 @@ export default function RoomScreen() {
   const me = people.find(person => person.id === auth.currentUser?.uid);
   const joined = Boolean(me);
   const current = room?.queue?.find(item => item.id === room.currentItemId) ?? room?.queue?.[0];
+  const queuedVideoIds = (room?.queue ?? []).map(item => item.videoId || item.id).join('|');
 
   useEffect(() => {
     if (!roomCode) {
@@ -227,9 +230,26 @@ export default function RoomScreen() {
   ]);
 
   useEffect(() => {
+    if (!current?.title) {
+      setRecommendations([]);
+      return;
+    }
+    let cancelled = false;
+    setRecommendationsLoading(true);
+    const query = [current.title, current.channelTitle].filter(Boolean).join(' ');
+    void searchYouTube(query, current.kind === 'music' ? 'music' : 'video')
+      .then(items => {
+        if (cancelled) return;
+        setRecommendations(items.filter(item => item.kind !== 'playlist' && item.id !== current.videoId).slice(0, 10));
+      })
+      .catch(() => { if (!cancelled) setRecommendations([]); })
+      .finally(() => { if (!cancelled) setRecommendationsLoading(false); });
+    return () => { cancelled = true; };
+  }, [current?.id, current?.title, current?.channelTitle, current?.kind]);
+
+  useEffect(() => {
     endedItemRef.current = '';
     setPlayerReady(false);
-    setFullscreenPlayerReady(false);
     setPlayerError(null);
     setAutoplayBlocked(false);
   }, [current?.id]);
@@ -254,15 +274,22 @@ export default function RoomScreen() {
 
   useEffect(() => {
     if (fullScreen) {
-      setFullscreenPlayerReady(false);
-      setFullscreenControlsVisible(true);
+        setFullscreenControlsVisible(true);
       StatusBar.setHidden(true, 'fade');
       void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
     } else {
-      setPlayerReady(false);
       StatusBar.setHidden(false, 'fade');
       void ScreenOrientation.unlockAsync().catch(() => {});
     }
+  }, [fullScreen]);
+
+  useEffect(() => {
+    if (!fullScreen) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setFullScreen(false);
+      return true;
+    });
+    return () => subscription.remove();
   }, [fullScreen]);
 
   useEffect(() => {
@@ -280,9 +307,8 @@ export default function RoomScreen() {
   }
 
   const syncPlayer = () => {
-    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
-    const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
-    if (!room || !current || !activeReady) return;
+    const activeRef = playerRef;
+    if (!room || !current || !playerReady) return;
     const playbackAnchor = room.playbackUpdatedAt ?? room.updatedAt;
     const elapsed = room.status === 'playing'
       ? Math.max(0, (Date.now() - playbackAnchor) / 1000)
@@ -302,19 +328,18 @@ export default function RoomScreen() {
   };
 
   useEffect(() => {
-    const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
-    if (!room || !current || !activeReady) return;
+    if (!room || !current || !playerReady) return;
     syncPlayer();
     const timer = setInterval(syncPlayer, 3000);
     return () => clearInterval(timer);
-  }, [room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id, playerReady, fullscreenPlayerReady, fullScreen, canControl]);
+  }, [room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id, playerReady, fullScreen, canControl]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') syncPlayer();
     });
     return () => subscription.remove();
-  }, [fullScreen, playerReady, fullscreenPlayerReady, room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id]);
+  }, [fullScreen, playerReady, room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id]);
 
   async function publish(status: Room['status'], position: number) {
     if (!current || !canControl) return;
@@ -334,8 +359,7 @@ export default function RoomScreen() {
       const message = JSON.parse(event.nativeEvent.data) as PlayerMessage;
 
       if (message.type === 'ready') {
-        if (isFullscreenPlayer) setFullscreenPlayerReady(true);
-        else setPlayerReady(true);
+        setPlayerReady(true);
         setPlayerError(null);
         setError(previous => previous.includes('renderer stopped unexpectedly') ? '' : previous);
         return;
@@ -390,7 +414,7 @@ export default function RoomScreen() {
   }
 
   function command(script: string) {
-    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
+    const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.' + script + '}true;',
     );
@@ -418,10 +442,9 @@ export default function RoomScreen() {
   }
 
   function seekToPosition(position: number) {
-    const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
-    if (!activeReady || !playerDuration || !canControl) return;
+    if (!playerReady || !playerDuration || !canControl) return;
     const target = Math.max(0, Math.min(playerDuration, position));
-    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
+    const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.seekTo(' + target + ',true);window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:' + target + '}));}true;'
     );
@@ -441,7 +464,7 @@ export default function RoomScreen() {
 
   function seek(delta: number) {
     if (!canControl) return;
-    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
+    const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){' +
       'var target=Math.max(0,Number(window.vmPlayer.getCurrentTime()||0)+' + delta + ');' +
@@ -449,6 +472,49 @@ export default function RoomScreen() {
       'window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:target}));' +
       '}true;',
     );
+  }
+
+  async function addRecommendation(item: YouTubeResult) {
+    if (!canControl || addingRecommendation) return;
+    setAddingRecommendation(item.id);
+    try {
+      await addQueueItem(roomCode, {
+        id: item.id,
+        videoId: item.id,
+        title: item.title,
+        channelTitle: item.channelTitle,
+        thumbnail: item.thumbnail,
+        duration: item.duration,
+        kind: item.kind === 'music' ? 'music' : 'video',
+      });
+      setRecommendations(previous => previous.filter(result => result.id !== item.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add recommendation.');
+    } finally {
+      setAddingRecommendation(null);
+    }
+  }
+
+  async function playRecommendation(item: YouTubeResult) {
+    if (!canControl || addingRecommendation) return;
+    setAddingRecommendation(item.id);
+    try {
+      await addQueueItem(roomCode, {
+        id: item.id,
+        videoId: item.id,
+        title: item.title,
+        channelTitle: item.channelTitle,
+        thumbnail: item.thumbnail,
+        duration: item.duration,
+        kind: item.kind === 'music' ? 'music' : 'video',
+      });
+      await setCurrentItem(roomCode, item.id, 'playing', 0);
+      setRecommendations(previous => previous.filter(result => result.id !== item.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not play recommendation.');
+    } finally {
+      setAddingRecommendation(null);
+    }
   }
 
   async function selectItem(item: QueueItem) {
@@ -487,12 +553,43 @@ export default function RoomScreen() {
       seekToFraction(0);
       return;
     }
-    const next = queue[index + direction];
-    if (!next) return;
+
+    const queuedTarget = queue[index + direction];
+    if (queuedTarget) {
+      try {
+        await setCurrentItem(roomCode, queuedTarget.id, 'playing', 0);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not change track.');
+      }
+      return;
+    }
+
+    // If the queue has no item in this direction, keep playback moving with a related recommendation.
+    const queuedIds = new Set(queue.map(item => item.videoId || item.id));
+    const available = recommendations.filter(item => item.kind !== 'playlist' && !queuedIds.has(item.id) && item.id !== current.videoId);
+    const fallback = direction > 0 ? available[0] : available[available.length - 1];
+    if (!fallback) {
+      setError(direction > 0 ? 'Nothing is queued and no recommendations are available yet.' : 'There is no previous track in the queue yet.');
+      return;
+    }
+
+    setAddingRecommendation(fallback.id);
     try {
-      await setCurrentItem(roomCode, next.id, 'playing', 0);
+      await addQueueItem(roomCode, {
+        id: fallback.id,
+        videoId: fallback.id,
+        title: fallback.title,
+        channelTitle: fallback.channelTitle,
+        thumbnail: fallback.thumbnail,
+        duration: fallback.duration,
+        kind: fallback.kind === 'music' ? 'music' : 'video',
+      });
+      await setCurrentItem(roomCode, fallback.id, 'playing', 0);
+      setRecommendations(previous => previous.filter(item => item.id !== fallback.id));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not change track.');
+      setError(e instanceof Error ? e.message : 'Could not play a related recommendation.');
+    } finally {
+      setAddingRecommendation(null);
     }
   }
 
@@ -597,8 +694,8 @@ export default function RoomScreen() {
   const playerErrorText = playerError ? PLAYER_ERROR_TEXT[playerError] ?? 'YouTube could not play this video.' : '';
 
   return (
-    <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView style={s.c} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <SafeAreaView style={s.safe} edges={fullScreen ? [] : ['top', 'bottom']}>
+      <KeyboardAvoidingView style={[s.c, fullScreen && { paddingHorizontal: 0 }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
           <Text style={s.back}>‹</Text>
@@ -612,8 +709,8 @@ export default function RoomScreen() {
         </TouchableOpacity>
       </View>
 
-      {!fullScreen ? (
-        <View style={s.player}>
+      {current ? (
+        <View style={[s.player, fullScreen && s.fullscreenVideo]}>
           {current ? (
             <WebView
               key={current.id + '-inline'}
@@ -693,23 +790,23 @@ export default function RoomScreen() {
 
           {canControl ? (
             <View style={s.compactControls}>
-              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!playerReady && !fullscreenPlayerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!playerReady}>
                 <Text style={s.compactControlText}>⏮</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!playerReady && !fullscreenPlayerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!playerReady}>
                 <Text style={s.compactControlText}>↶</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.mainPlay, (!playerReady && !fullscreenPlayerReady) && s.disabled]}
+                style={[s.mainPlay, (!playerReady) && s.disabled]}
                 onPress={() => void togglePlayback()}
-                disabled={(!playerReady && !fullscreenPlayerReady) || !current}
+                disabled={(!playerReady) || !current}
               >
                 <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!playerReady && !fullscreenPlayerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!playerReady}>
                 <Text style={s.compactControlText}>↷</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!playerReady && !fullscreenPlayerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!playerReady}>
                 <Text style={s.compactControlText}>⏭</Text>
               </TouchableOpacity>
             </View>
@@ -849,6 +946,40 @@ export default function RoomScreen() {
         </TouchableOpacity>
       ) : null}
 
+      {current && (recommendationsLoading || recommendations.length > 0) ? (
+        <View style={s.recommendationSection}>
+          <View style={s.recommendationHeading}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.recommendationKicker}>KEEP THE VIBE GOING</Text>
+              <Text style={s.recommendationTitle}>Up next, for you</Text>
+            </View>
+            {recommendationsLoading ? <ActivityIndicator color="#a78bfa" size="small" /> : null}
+          </View>
+          {recommendations.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.recommendationList}>
+              {recommendations.filter(item => !new Set(queuedVideoIds.split('|')).has(item.id)).map(item => (
+                <View key={item.id} style={s.recommendationCard}>
+                  <TouchableOpacity activeOpacity={0.82} onPress={() => void playRecommendation(item)} disabled={!canControl || addingRecommendation !== null} accessibilityRole="button" accessibilityLabel={`Play ${item.title}`}>
+                    <View style={s.recommendationImageWrap}>
+                      <Image source={{ uri: item.thumbnail }} style={s.recommendationThumb} />
+                      <View style={s.recommendationPlay}><Text style={s.recommendationPlayText}>{addingRecommendation === item.id ? '…' : '▶'}</Text></View>
+                    </View>
+                    <Text numberOfLines={2} style={s.recommendationCardTitle}>{item.title}</Text>
+                    <Text numberOfLines={1} style={s.recommendationChannel}>{item.channelTitle}</Text>
+                    {canControl ? <Text style={s.recommendationTapHint}>TAP TO PLAY NOW</Text> : null}
+                  </TouchableOpacity>
+                  {canControl ? (
+                    <TouchableOpacity style={s.recommendationAdd} onPress={() => void addRecommendation(item)} disabled={addingRecommendation !== null}>
+                      <Text style={s.recommendationAddText}>{addingRecommendation === item.id ? 'Adding…' : '＋ Add to queue'}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ))}
+            </ScrollView>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={s.queueHead}>
         <Text style={s.section}>UP NEXT · {Math.max(0, room.queue.length - (current ? 1 : 0))}</Text>
         <View style={s.queueActions}>
@@ -910,44 +1041,8 @@ export default function RoomScreen() {
         ) : null}
       </ScrollView>
 
-      <Modal
-        visible={fullScreen && Boolean(current)}
-        animationType="fade"
-        supportedOrientations={['landscape']}
-        onRequestClose={() => setFullScreen(false)}
-      >
+      {fullScreen && Boolean(current) ? (
         <View style={s.fullscreenRoot}>
-          <View style={s.fullscreenVideo}>
-            {current ? (
-              <WebView
-                key={current.id + '-fullscreen'}
-                ref={fullscreenPlayerRef}
-                pointerEvents="none"
-                source={{ html, baseUrl: APP_REFERRER }}
-                originWhitelist={['*']}
-                javaScriptEnabled
-                domStorageEnabled
-                allowsInlineMediaPlayback
-                allowsFullscreenVideo={false}
-                mediaPlaybackRequiresUserAction={false}
-                setSupportMultipleWindows={false}
-                onShouldStartLoadWithRequest={request => !/^(intent:|vnd\.youtube:|youtube:|market:)/i.test(request.url)}
-                onMessage={event => void handlePlayerMessage(event, true)}
-                onHttpError={() => setError('The YouTube player could not load. Check your connection and try again.')}
-                onRenderProcessGone={() => {
-                  setFullscreenPlayerReady(false);
-                  setError('The fullscreen video renderer stopped unexpectedly. Recovering…');
-                  fullscreenPlayerRef.current?.reload();
-                }}
-                onContentProcessDidTerminate={() => {
-                  setFullscreenPlayerReady(false);
-                  setError('The fullscreen video renderer stopped unexpectedly. Recovering…');
-                  fullscreenPlayerRef.current?.reload();
-                }}
-                startInLoadingState
-              />
-            ) : null}
-          </View>
           <TouchableOpacity
             activeOpacity={1}
             style={s.fullscreenTapArea}
@@ -972,7 +1067,7 @@ export default function RoomScreen() {
               <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!canControl}>
                 <Text style={s.compactControlText}>↶</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.mainPlay} onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')} disabled={!canControl}>
+              <TouchableOpacity style={s.mainPlay} onPress={() => void togglePlayback()} disabled={!canControl}>
                 <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!canControl}>
@@ -1034,7 +1129,7 @@ export default function RoomScreen() {
             </>
           ) : null}
         </View>
-      </Modal>
+      ) : null}
 
       <Modal visible={chatOpen && joined} transparent animationType="slide" onRequestClose={() => setChatOpen(false)} statusBarTranslucent>
         <KeyboardAvoidingView style={s.chatKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -1132,7 +1227,7 @@ const s = StyleSheet.create({
   c: { flex: 1, backgroundColor: '#08070d', paddingHorizontal: 16 },
   center: { flex: 1, backgroundColor: '#08070d', alignItems: 'center', justifyContent: 'center', padding: 24 },
   big: { color: '#fff', fontSize: 26, fontWeight: '900' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingTop: 3 },
   backBtn: { paddingRight: 10 },
   back: { color: '#fff', fontSize: 36, lineHeight: 36 },
   kicker: { color: '#a78bfa', fontSize: 10, fontWeight: '900', letterSpacing: 2 },
@@ -1142,7 +1237,7 @@ const s = StyleSheet.create({
   player: { height: 220, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000' },
   emptyPlayer: { flex: 1, backgroundColor: '#0b0a10', alignItems: 'center', justifyContent: 'center' },
   emptyPlayerText: { color: '#67636f', fontSize: 12 },
-  playerControlPanel: { backgroundColor: '#111019', borderRadius: 18, marginTop: 10, padding: 13, borderWidth: 1, borderColor: '#201d28' },
+  playerControlPanel: { backgroundColor: '#111019', borderRadius: 21, marginTop: 12, padding: 15, borderWidth: 1, borderColor: '#30263d' },
   playerIdentityRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   playerEyebrow: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
   playerTitle: { color: '#fff', fontSize: 15, fontWeight: '900', marginTop: 3 },
@@ -1157,7 +1252,7 @@ const s = StyleSheet.create({
   compactControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, paddingTop: 10 },
   compactControl: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
   compactControlText: { color: '#eee', fontSize: 20, fontWeight: '800' },
-  mainPlay: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#8b5cf6', alignItems: 'center', justifyContent: 'center' },
+  mainPlay: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#9565f8', alignItems: 'center', justifyContent: 'center', shadowColor: '#8b5cf6', shadowOpacity: 0.24, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   mainPlayText: { color: '#fff', fontSize: 22, fontWeight: '900' },
   settingsPanel: { marginTop: 12, backgroundColor: '#0b0a10', borderRadius: 14, padding: 12 },
   settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
@@ -1166,26 +1261,26 @@ const s = StyleSheet.create({
   settingButtons: { flexDirection: 'row', gap: 8, marginTop: 6 },
   settingButton: { flex: 1, backgroundColor: '#201d27', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 8 },
   settingButtonText: { color: '#cfc2ed', fontSize: 11, fontWeight: '900' },
-  fullscreenRoot: { flex: 1, backgroundColor: '#050509' },
-  fullscreenTapArea: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 1 },
-  fullscreenHeader: { position: 'absolute', zIndex: 3, top: 12, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 14, backgroundColor: 'rgba(5,5,9,0.62)' },
+  fullscreenRoot: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'transparent', zIndex: 25, elevation: 25 },
+  fullscreenTapArea: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 1, elevation: 1 },
+  fullscreenHeader: { position: 'absolute', zIndex: 30, elevation: 30, top: 12, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 14, backgroundColor: 'rgba(5,5,9,0.62)' },
   fullscreenKicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
   fullscreenTitle: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 2 },
   fullscreenChannel: { color: '#777481', fontSize: 11, marginTop: 2 },
   fullscreenClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
   fullscreenCloseText: { color: '#fff', fontSize: 25, lineHeight: 27 },
-  fullscreenVideo: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#000', overflow: 'hidden' },
-  fullscreenControls: { position: 'absolute', zIndex: 3, bottom: 66, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 8, backgroundColor: 'rgba(5,5,9,0.56)', borderRadius: 18 },
-  fullscreenProgress: { position: 'absolute', zIndex: 3, left: 18, right: 18, bottom: 48 },
-  fullscreenTimeRow: { position: 'absolute', zIndex: 3, bottom: 12, left: 22, right: 22, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(5,5,9,0.56)' },
-  fullscreenSettings: { position: 'absolute', zIndex: 4, right: 18, bottom: 120, width: 260, backgroundColor: 'rgba(17,16,25,0.96)', borderRadius: 14, padding: 12 },
+  fullscreenVideo: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, width: '100%', height: '100%', borderRadius: 0, backgroundColor: '#000', overflow: 'hidden', zIndex: 20, elevation: 20 },
+  fullscreenControls: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 66, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 8, backgroundColor: 'rgba(5,5,9,0.56)', borderRadius: 18 },
+  fullscreenProgress: { position: 'absolute', zIndex: 30, elevation: 30, left: 18, right: 18, bottom: 48 },
+  fullscreenTimeRow: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 12, left: 22, right: 22, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(5,5,9,0.56)' },
+  fullscreenSettings: { position: 'absolute', zIndex: 31, elevation: 31, right: 18, bottom: 120, width: 260, backgroundColor: 'rgba(17,16,25,0.96)', borderRadius: 14, padding: 12 },
   scrubWrap: { marginTop: 7, marginHorizontal: -8, height: 28, justifyContent: 'center' },
   error: { backgroundColor: '#35151c', borderRadius: 14, padding: 12, marginTop: 10 },
   errorTitle: { color: '#fff', fontWeight: '800' },
   errorText: { color: '#c99ca5', fontSize: 12, lineHeight: 18, marginTop: 3 },
   retry: { alignSelf: 'flex-start', backgroundColor: '#4a2029', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginTop: 8 },
   retryText: { color: '#fff', fontWeight: '800', fontSize: 12 },
-  now: { flexDirection: 'row', backgroundColor: '#111019', borderRadius: 18, padding: 16, marginTop: 12, borderWidth: 1, borderColor: '#201d28' },
+  now: { flexDirection: 'row', backgroundColor: '#111019', borderRadius: 20, padding: 16, marginTop: 13, borderWidth: 1, borderColor: '#30263d' },
   nowKicker: { color: '#8b5cf6', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
   nowTitle: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 4 },
   channel: { color: '#777481', fontSize: 12, marginTop: 3 },
@@ -1207,13 +1302,28 @@ const s = StyleSheet.create({
   joinBtnText: { color: '#cfc2ed', fontWeight: '800' },
   syncBtn: { backgroundColor: '#8b5cf6', padding: 14, borderRadius: 14, alignItems: 'center', marginTop: 10 },
   syncBtnText: { color: '#fff', fontWeight: '900' },
-  queueHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 7 },
+  recommendationSection: { marginTop: 22, marginBottom: 10, paddingTop: 4 },
+  recommendationHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  recommendationKicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.8 },
+  recommendationTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 4 },
+  recommendationList: { gap: 12, paddingRight: 16, paddingBottom: 4 },
+  recommendationCard: { width: 178, backgroundColor: '#12101a', borderRadius: 18, borderWidth: 1, borderColor: '#30263d', padding: 10 },
+  recommendationImageWrap: { position: 'relative' },
+  recommendationThumb: { width: '100%', height: 100, borderRadius: 10, backgroundColor: '#201d27' },
+  recommendationPlay: { position: 'absolute', right: 8, bottom: 8, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(139,92,246,0.95)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  recommendationPlayText: { color: '#fff', fontSize: 14, fontWeight: '900', marginLeft: 2 },
+  recommendationTapHint: { color: '#a78bfa', fontSize: 8, letterSpacing: 1, fontWeight: '900', marginTop: 7 },
+  recommendationCardTitle: { color: '#f7f5fb', fontSize: 12, lineHeight: 16, fontWeight: '800', marginTop: 9, minHeight: 32 },
+  recommendationChannel: { color: '#8e8999', fontSize: 10, marginTop: 4 },
+  recommendationAdd: { backgroundColor: '#2a1c4d', borderRadius: 9, paddingVertical: 9, alignItems: 'center', marginTop: 9 },
+  recommendationAddText: { color: '#d9c9ff', fontSize: 11, fontWeight: '900' },
+  queueHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 15, marginBottom: 10, paddingTop: 4 },
   queueActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   section: { color: '#777481', fontSize: 11, fontWeight: '900', letterSpacing: 1.4 },
   add: { color: '#c4b5fd', fontWeight: '900' },
   chatToggle: { color: '#a78bfa', fontWeight: '800' },
   queue: { gap: 8, paddingBottom: 28 },
-  queueItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111019', borderRadius: 14, padding: 7 },
+  queueItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#121019', borderRadius: 16, padding: 9, borderWidth: 1, borderColor: '#24202f' },
   currentQueueItem: { borderWidth: 1, borderColor: '#6d4ab6' },
   queueMain: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   qThumb: { width: 70, height: 44, borderRadius: 8, backgroundColor: '#201d27', marginRight: 10 },

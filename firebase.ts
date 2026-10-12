@@ -1,5 +1,8 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { getAuth, getReactNativePersistence, initializeAuth, signInAnonymously } from 'firebase/auth';
+import { getAuth, initializeAuth, signInAnonymously } from 'firebase/auth';
+// Firebase's React Native runtime exposes this API, but Firebase 12.19.0's public typings omit it.
+// @ts-expect-error Firebase React Native persistence export is missing from the published type declarations.
+import { getReactNativePersistence } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirestore } from 'firebase/firestore';
 
