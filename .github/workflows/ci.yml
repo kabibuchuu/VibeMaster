@@ -20,3 +20,5 @@ jobs:
         run: npm install
       - name: TypeScript check
         run: npx tsc --noEmit
+      - name: Room sync clock tests
+        run: npm run test:room-sync
