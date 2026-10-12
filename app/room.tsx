@@ -709,6 +709,7 @@ export default function RoomScreen() {
         </TouchableOpacity>
       </View>
 
+      <ScrollView style={s.roomScroll} contentContainerStyle={s.roomScrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       {current ? (
         <View style={[s.player, fullScreen && s.fullscreenVideo]}>
           {current ? (
@@ -1003,7 +1004,7 @@ export default function RoomScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={s.queue} keyboardShouldPersistTaps="handled">
+      <View style={s.queue}>
         {room.queue.filter(item => item.id !== current?.id).map((item, index) => (
           <View key={item.id} style={[s.queueItem, item.id === current?.id && s.currentQueueItem]}>
             <TouchableOpacity style={s.queueMain} onPress={() => void selectItem(item)} disabled={!canControl}>
@@ -1039,6 +1040,8 @@ export default function RoomScreen() {
             <Text style={s.leaveText}>Leave room</Text>
           </TouchableOpacity>
         ) : null}
+      </View>lView>
+
       </ScrollView>
 
       {fullScreen && Boolean(current) ? (
@@ -1225,6 +1228,8 @@ export default function RoomScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#08070d' },
   c: { flex: 1, backgroundColor: '#08070d', paddingHorizontal: 16 },
+  roomScroll: { flex: 1 },
+  roomScrollContent: { paddingBottom: 36 },
   center: { flex: 1, backgroundColor: '#08070d', alignItems: 'center', justifyContent: 'center', padding: 24 },
   big: { color: '#fff', fontSize: 26, fontWeight: '900' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingTop: 3 },
@@ -1234,10 +1239,10 @@ const s = StyleSheet.create({
   title: { color: '#fff', fontSize: 22, fontWeight: '900', marginTop: 3 },
   people: { backgroundColor: '#15131d', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
   peopleText: { color: '#c4b5fd', fontWeight: '800' },
-  player: { height: 220, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000' },
+  player: { width: '100%', aspectRatio: 16 / 9, minHeight: 190, maxHeight: 280, borderRadius: 22, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: '#2b2636' },
   emptyPlayer: { flex: 1, backgroundColor: '#0b0a10', alignItems: 'center', justifyContent: 'center' },
   emptyPlayerText: { color: '#67636f', fontSize: 12 },
-  playerControlPanel: { backgroundColor: '#111019', borderRadius: 21, marginTop: 12, padding: 15, borderWidth: 1, borderColor: '#30263d' },
+  playerControlPanel: { backgroundColor: '#111019', borderRadius: 22, marginTop: 12, padding: 16, borderWidth: 1, borderColor: '#30263d' },
   playerIdentityRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   playerEyebrow: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
   playerTitle: { color: '#fff', fontSize: 15, fontWeight: '900', marginTop: 3 },
@@ -1261,7 +1266,7 @@ const s = StyleSheet.create({
   settingButtons: { flexDirection: 'row', gap: 8, marginTop: 6 },
   settingButton: { flex: 1, backgroundColor: '#201d27', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 8 },
   settingButtonText: { color: '#cfc2ed', fontSize: 11, fontWeight: '900' },
-  fullscreenRoot: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'transparent', zIndex: 25, elevation: 25 },
+  fullscreenRoot: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#000', zIndex: 25, elevation: 25 },
   fullscreenTapArea: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 1, elevation: 1 },
   fullscreenHeader: { position: 'absolute', zIndex: 30, elevation: 30, top: 12, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 14, backgroundColor: 'rgba(5,5,9,0.62)' },
   fullscreenKicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
@@ -1270,7 +1275,7 @@ const s = StyleSheet.create({
   fullscreenClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
   fullscreenCloseText: { color: '#fff', fontSize: 25, lineHeight: 27 },
   fullscreenVideo: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, width: '100%', height: '100%', borderRadius: 0, backgroundColor: '#000', overflow: 'hidden', zIndex: 20, elevation: 20 },
-  fullscreenControls: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 66, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 8, backgroundColor: 'rgba(5,5,9,0.56)', borderRadius: 18 },
+  fullscreenControls: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 76, left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, paddingVertical: 10, paddingHorizontal: 8, backgroundColor: 'rgba(12,11,18,0.78)', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(196,181,253,0.22)' },
   fullscreenProgress: { position: 'absolute', zIndex: 30, elevation: 30, left: 18, right: 18, bottom: 48 },
   fullscreenTimeRow: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 12, left: 22, right: 22, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(5,5,9,0.56)' },
   fullscreenSettings: { position: 'absolute', zIndex: 31, elevation: 31, right: 18, bottom: 120, width: 260, backgroundColor: 'rgba(17,16,25,0.96)', borderRadius: 14, padding: 12 },
