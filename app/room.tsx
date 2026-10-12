@@ -259,7 +259,6 @@ export default function RoomScreen() {
       StatusBar.setHidden(true, 'fade');
       void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
     } else {
-      setPlayerReady(false);
       StatusBar.setHidden(false, 'fade');
       void ScreenOrientation.unlockAsync().catch(() => {});
     }
@@ -280,8 +279,8 @@ export default function RoomScreen() {
   }
 
   const syncPlayer = () => {
-    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
-    const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
+    const activeRef = playerRef;
+    const activeReady = playerReady;
     if (!room || !current || !activeReady) return;
     const playbackAnchor = room.playbackUpdatedAt ?? room.updatedAt;
     const elapsed = room.status === 'playing'
@@ -302,7 +301,7 @@ export default function RoomScreen() {
   };
 
   useEffect(() => {
-    const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
+    const activeReady = playerReady;
     if (!room || !current || !activeReady) return;
     syncPlayer();
     const timer = setInterval(syncPlayer, 3000);
@@ -390,7 +389,7 @@ export default function RoomScreen() {
   }
 
   function command(script: string) {
-    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
+    const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.' + script + '}true;',
     );
@@ -418,10 +417,10 @@ export default function RoomScreen() {
   }
 
   function seekToPosition(position: number) {
-    const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
+    const activeReady = playerReady;
     if (!activeReady || !playerDuration || !canControl) return;
     const target = Math.max(0, Math.min(playerDuration, position));
-    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
+    const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.seekTo(' + target + ',true);window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:' + target + '}));}true;'
     );
@@ -441,7 +440,7 @@ export default function RoomScreen() {
 
   function seek(delta: number) {
     if (!canControl) return;
-    const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
+    const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){' +
       'var target=Math.max(0,Number(window.vmPlayer.getCurrentTime()||0)+' + delta + ');' +
@@ -612,8 +611,8 @@ export default function RoomScreen() {
         </TouchableOpacity>
       </View>
 
-      {!fullScreen ? (
-        <View style={s.player}>
+      {current ? (
+        <View style={[s.player, fullScreen && s.fullscreenVideo]}>
           {current ? (
             <WebView
               key={current.id + '-inline'}
@@ -910,44 +909,8 @@ export default function RoomScreen() {
         ) : null}
       </ScrollView>
 
-      <Modal
-        visible={fullScreen && Boolean(current)}
-        animationType="fade"
-        supportedOrientations={['landscape']}
-        onRequestClose={() => setFullScreen(false)}
-      >
+      {fullScreen && Boolean(current) ? (
         <View style={s.fullscreenRoot}>
-          <View style={s.fullscreenVideo}>
-            {current ? (
-              <WebView
-                key={current.id + '-fullscreen'}
-                ref={fullscreenPlayerRef}
-                pointerEvents="none"
-                source={{ html, baseUrl: APP_REFERRER }}
-                originWhitelist={['*']}
-                javaScriptEnabled
-                domStorageEnabled
-                allowsInlineMediaPlayback
-                allowsFullscreenVideo={false}
-                mediaPlaybackRequiresUserAction={false}
-                setSupportMultipleWindows={false}
-                onShouldStartLoadWithRequest={request => !/^(intent:|vnd\.youtube:|youtube:|market:)/i.test(request.url)}
-                onMessage={event => void handlePlayerMessage(event, true)}
-                onHttpError={() => setError('The YouTube player could not load. Check your connection and try again.')}
-                onRenderProcessGone={() => {
-                  setFullscreenPlayerReady(false);
-                  setError('The fullscreen video renderer stopped unexpectedly. Recovering…');
-                  fullscreenPlayerRef.current?.reload();
-                }}
-                onContentProcessDidTerminate={() => {
-                  setFullscreenPlayerReady(false);
-                  setError('The fullscreen video renderer stopped unexpectedly. Recovering…');
-                  fullscreenPlayerRef.current?.reload();
-                }}
-                startInLoadingState
-              />
-            ) : null}
-          </View>
           <TouchableOpacity
             activeOpacity={1}
             style={s.fullscreenTapArea}
@@ -972,7 +935,7 @@ export default function RoomScreen() {
               <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!canControl}>
                 <Text style={s.compactControlText}>↶</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.mainPlay} onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')} disabled={!canControl}>
+              <TouchableOpacity style={s.mainPlay} onPress={() => void togglePlayback()} disabled={!canControl}>
                 <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!canControl}>
@@ -1034,7 +997,7 @@ export default function RoomScreen() {
             </>
           ) : null}
         </View>
-      </Modal>
+      ) : null}
 
       <Modal visible={chatOpen && joined} transparent animationType="slide" onRequestClose={() => setChatOpen(false)} statusBarTranslucent>
         <KeyboardAvoidingView style={s.chatKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -1166,19 +1129,19 @@ const s = StyleSheet.create({
   settingButtons: { flexDirection: 'row', gap: 8, marginTop: 6 },
   settingButton: { flex: 1, backgroundColor: '#201d27', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 8 },
   settingButtonText: { color: '#cfc2ed', fontSize: 11, fontWeight: '900' },
-  fullscreenRoot: { flex: 1, backgroundColor: '#050509' },
-  fullscreenTapArea: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 1 },
-  fullscreenHeader: { position: 'absolute', zIndex: 3, top: 12, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 14, backgroundColor: 'rgba(5,5,9,0.62)' },
+  fullscreenRoot: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'transparent', zIndex: 25, elevation: 25 },
+  fullscreenTapArea: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 21, elevation: 21 },
+  fullscreenHeader: { position: 'absolute', zIndex: 30, elevation: 30, top: 12, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 14, backgroundColor: 'rgba(5,5,9,0.62)' },
   fullscreenKicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
   fullscreenTitle: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 2 },
   fullscreenChannel: { color: '#777481', fontSize: 11, marginTop: 2 },
   fullscreenClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
   fullscreenCloseText: { color: '#fff', fontSize: 25, lineHeight: 27 },
-  fullscreenVideo: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#000', overflow: 'hidden' },
-  fullscreenControls: { position: 'absolute', zIndex: 3, bottom: 66, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 8, backgroundColor: 'rgba(5,5,9,0.56)', borderRadius: 18 },
-  fullscreenProgress: { position: 'absolute', zIndex: 3, left: 18, right: 18, bottom: 48 },
-  fullscreenTimeRow: { position: 'absolute', zIndex: 3, bottom: 12, left: 22, right: 22, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(5,5,9,0.56)' },
-  fullscreenSettings: { position: 'absolute', zIndex: 4, right: 18, bottom: 120, width: 260, backgroundColor: 'rgba(17,16,25,0.96)', borderRadius: 14, padding: 12 },
+  fullscreenVideo: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, borderRadius: 0, backgroundColor: '#000', overflow: 'hidden', zIndex: 20, elevation: 20 },
+  fullscreenControls: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 66, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 8, backgroundColor: 'rgba(5,5,9,0.56)', borderRadius: 18 },
+  fullscreenProgress: { position: 'absolute', zIndex: 30, elevation: 30, left: 18, right: 18, bottom: 48 },
+  fullscreenTimeRow: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 12, left: 22, right: 22, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(5,5,9,0.56)' },
+  fullscreenSettings: { position: 'absolute', zIndex: 31, elevation: 31, right: 18, bottom: 120, width: 260, backgroundColor: 'rgba(17,16,25,0.96)', borderRadius: 14, padding: 12 },
   scrubWrap: { marginTop: 7, marginHorizontal: -8, height: 28, justifyContent: 'center' },
   error: { backgroundColor: '#35151c', borderRadius: 14, padding: 12, marginTop: 10 },
   errorTitle: { color: '#fff', fontWeight: '800' },
