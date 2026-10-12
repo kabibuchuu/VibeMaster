@@ -77,7 +77,7 @@ function playerHtml(videoId: string) {
     'function onYouTubeIframeAPIReady(){',
     'vmPlayer=new YT.Player("player",{',
     'width:"100%",height:"100%",videoId:"' + safeId + '",',
-    'playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,fs:0,iv_load_policy:3,enablejsapi:1,origin:"' + APP_ORIGIN + '",widget_referrer:"' + APP_REFERRER + '"},',
+    'playerVars:{playsinline:1,controls:1,disablekb:0,rel:0,fs:0,iv_load_policy:3,enablejsapi:1,origin:"' + APP_ORIGIN + '",widget_referrer:"' + APP_REFERRER + '"},',
     'events:{',
     'onReady:function(){send({type:"ready"});setInterval(function(){if(vmPlayer){send({type:"progress",position:Number(vmPlayer.getCurrentTime()||0),duration:Number(vmPlayer.getDuration()||0)});}},500);},',
     'onError:function(e){send({type:"error",code:e.data});},',
@@ -704,7 +704,7 @@ export default function RoomScreen() {
             <WebView
               key={current.id + '-inline'}
               ref={playerRef}
-              pointerEvents="none"
+              pointerEvents="auto"
               source={{ html, baseUrl: APP_REFERRER }}
               originWhitelist={['*']}
               javaScriptEnabled
