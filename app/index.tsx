@@ -35,7 +35,7 @@ export default function Home() {
           <View style={s.joinHeader}><View><Text style={s.joinTitle}>Got a room code?</Text><Text style={s.joinSub}>Jump back in with your friends.</Text></View><View style={s.joinIcon}><Text style={s.joinIconText}>⌁</Text></View></View>
           <View style={s.joinRow}><TextInput value={code} onChangeText={v=>setCode(v.toUpperCase())} placeholder="ENTER ROOM CODE" placeholderTextColor="#6f6a7c" autoCapitalize="characters" style={s.input} maxLength={8}/><TouchableOpacity style={s.joinBtn} onPress={() => code.trim()&&router.push({pathname:'/room',params:{code:code.trim()}})}><Text style={s.joinText}>Join room →</Text></TouchableOpacity></View>
         </View>
-        <Text style={s.footer}>MADE FOR SHARED MOMENTS <Text style={s.footerSpark}>✦</Text></Text>
+        <TouchableOpacity onPress={() => router.push("/legal")} accessibilityRole="link"><Text style={s.footer}>LEGAL & PRIVACY  ·  MADE FOR SHARED MOMENTS <Text style={s.footerSpark}>✦</Text></Text></TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
