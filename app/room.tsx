@@ -129,6 +129,7 @@ export default function RoomScreen() {
   const [manageOpen, setManageOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
+  const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
   const [volume, setVolume] = useState(1);
   const [brightness, setBrightness] = useState(0.7);
   const [fullscreenPlayerReady, setFullscreenPlayerReady] = useState(false);
@@ -251,6 +252,7 @@ export default function RoomScreen() {
   useEffect(() => {
     if (fullScreen) {
       setFullscreenPlayerReady(false);
+      setFullscreenControlsVisible(true);
       StatusBar.setHidden(true, 'fade');
       void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
     } else {
@@ -259,6 +261,12 @@ export default function RoomScreen() {
       void ScreenOrientation.unlockAsync().catch(() => {});
     }
   }, [fullScreen]);
+
+  useEffect(() => {
+    if (!fullScreen || !fullscreenControlsVisible) return;
+    const timer = setTimeout(() => setFullscreenControlsVisible(false), 3500);
+    return () => clearTimeout(timer);
+  }, [fullScreen, fullscreenControlsVisible]);
 
   const syncPlayer = () => {
     const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
@@ -903,83 +911,93 @@ export default function RoomScreen() {
               />
             ) : null}
           </View>
-          <View style={s.fullscreenHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.fullscreenKicker}>{room.mode === 'music' ? 'MUSIC' : 'VIDEO'} · {status}</Text>
-              <Text numberOfLines={1} style={s.fullscreenTitle}>{current?.title}</Text>
-              <Text numberOfLines={1} style={s.fullscreenChannel}>{current?.channelTitle}</Text>
-            </View>
-            <TouchableOpacity style={s.fullscreenClose} onPress={() => setFullScreen(false)}>
-              <Text style={s.fullscreenCloseText}>×</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={s.fullscreenControls}>
-            <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!canControl}>
-              <Text style={s.compactControlText}>⏮</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!canControl}>
-              <Text style={s.compactControlText}>↶</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.mainPlay} onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')} disabled={!canControl}>
-              <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!canControl}>
-              <Text style={s.compactControlText}>↷</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!canControl}>
-              <Text style={s.compactControlText}>⏭</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.iconButton} onPress={() => setSettingsOpen(value => !value)}>
-              <Text style={s.iconButtonText}>⚙</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={s.fullscreenProgress}>
-            <Slider
-              value={isSeeking ? scrubPosition : playerPosition}
-              minimumValue={0}
-              maximumValue={Math.max(1, playerDuration)}
-              disabled={!canControl || !playerDuration}
-              minimumTrackTintColor="#a78bfa"
-              maximumTrackTintColor="#302b38"
-              thumbTintColor="#c4b5fd"
-              onSlidingStart={() => {
-                setIsSeeking(true);
-                setScrubPosition(playerPosition);
-              }}
-              onValueChange={value => setScrubPosition(value)}
-              onSlidingComplete={value => {
-                setIsSeeking(false);
-                setScrubPosition(value);
-                seekToPosition(value);
-              }}
-            />
-          </View>
-          <View style={s.fullscreenTimeRow}>
-            <Text style={s.playerTime}>{formatTime(isSeeking ? scrubPosition : playerPosition)} / {formatTime(playerDuration)}</Text>
-            <Text style={s.playerAccess}>{canControl ? 'ROOM CONTROL' : 'SYNCED'}</Text>
-          </View>
-          {settingsOpen ? (
-            <View style={s.fullscreenSettings}>
-              <View style={s.settingRow}>
-                <Text style={s.settingLabel}>Volume</Text>
-                <Text style={s.settingValue}>{Math.round(volume * 100)}%</Text>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={s.fullscreenTapArea}
+            onPress={() => setFullscreenControlsVisible(true)}
+          />
+          {fullscreenControlsVisible ? (
+            <>
+            <View style={s.fullscreenHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.fullscreenKicker}>{room.mode === 'music' ? 'MUSIC' : 'VIDEO'} · {status}</Text>
+                <Text numberOfLines={1} style={s.fullscreenTitle}>{current?.title}</Text>
+                <Text numberOfLines={1} style={s.fullscreenChannel}>{current?.channelTitle}</Text>
               </View>
-              <Slider value={volume} minimumValue={0} maximumValue={1} minimumTrackTintColor="#a78bfa" maximumTrackTintColor="#3a3544" thumbTintColor="#a78bfa" onValueChange={setPlayerVolume} />
-              {current?.kind === 'video' ? (
-                <>
-                  <View style={s.settingRow}>
-                    <Text style={s.settingLabel}>Brightness</Text>
-                    <Text style={s.settingValue}>{Math.round(brightness * 100)}%</Text>
-                  </View>
-                  <Slider value={brightness} minimumValue={0.05} maximumValue={1} minimumTrackTintColor="#a78bfa" maximumTrackTintColor="#3a3544" thumbTintColor="#a78bfa" onValueChange={setScreenBrightness} />
-                </>
-              ) : null}
-              <TouchableOpacity style={s.settingButton} onPress={toggleMute}>
-                <Text style={s.settingButtonText}>{muted ? 'Unmute' : 'Mute'}</Text>
+              <TouchableOpacity style={s.fullscreenClose} onPress={() => setFullScreen(false)}>
+                <Text style={s.fullscreenCloseText}>×</Text>
               </TouchableOpacity>
             </View>
+            <View style={s.fullscreenControls}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!canControl}>
+                <Text style={s.compactControlText}>⏮</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!canControl}>
+                <Text style={s.compactControlText}>↶</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.mainPlay} onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')} disabled={!canControl}>
+                <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!canControl}>
+                <Text style={s.compactControlText}>↷</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!canControl}>
+                <Text style={s.compactControlText}>⏭</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.iconButton} onPress={() => setSettingsOpen(value => !value)}>
+                <Text style={s.iconButtonText}>⚙</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={s.fullscreenProgress}>
+              <Slider
+                value={isSeeking ? scrubPosition : playerPosition}
+                minimumValue={0}
+                maximumValue={Math.max(1, playerDuration)}
+                disabled={!canControl || !playerDuration}
+                minimumTrackTintColor="#a78bfa"
+                maximumTrackTintColor="#302b38"
+                thumbTintColor="#c4b5fd"
+                onSlidingStart={() => {
+                  setIsSeeking(true);
+                  setScrubPosition(playerPosition);
+                }}
+                onValueChange={value => setScrubPosition(value)}
+                onSlidingComplete={value => {
+                  setIsSeeking(false);
+                  setScrubPosition(value);
+                  seekToPosition(value);
+                }}
+              />
+            </View>
+            <View style={s.fullscreenTimeRow}>
+              <Text style={s.playerTime}>{formatTime(isSeeking ? scrubPosition : playerPosition)} / {formatTime(playerDuration)}</Text>
+              <Text style={s.playerAccess}>{canControl ? 'ROOM CONTROL' : 'SYNCED'}</Text>
+            </View>
+            {settingsOpen ? (
+              <View style={s.fullscreenSettings}>
+                <View style={s.settingRow}>
+                  <Text style={s.settingLabel}>Volume</Text>
+                  <Text style={s.settingValue}>{Math.round(volume * 100)}%</Text>
+                </View>
+                <Slider value={volume} minimumValue={0} maximumValue={1} minimumTrackTintColor="#a78bfa" maximumTrackTintColor="#3a3544" thumbTintColor="#a78bfa" onValueChange={setPlayerVolume} />
+                {current?.kind === 'video' ? (
+                  <>
+                    <View style={s.settingRow}>
+                      <Text style={s.settingLabel}>Brightness</Text>
+                      <Text style={s.settingValue}>{Math.round(brightness * 100)}%</Text>
+                    </View>
+                    <Slider value={brightness} minimumValue={0.05} maximumValue={1} minimumTrackTintColor="#a78bfa" maximumTrackTintColor="#3a3544" thumbTintColor="#a78bfa" onValueChange={setScreenBrightness} />
+                  </>
+                ) : null}
+                <TouchableOpacity style={s.settingButton} onPress={toggleMute}>
+                  <Text style={s.settingButtonText}>{muted ? 'Unmute' : 'Mute'}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
+  
+            </>
           ) : null}
-        </View>
       </Modal>
 
       <Modal visible={chatOpen && joined} transparent animationType="slide" onRequestClose={() => setChatOpen(false)} statusBarTranslucent>
@@ -1113,6 +1131,7 @@ const s = StyleSheet.create({
   settingButton: { flex: 1, backgroundColor: '#201d27', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 8 },
   settingButtonText: { color: '#cfc2ed', fontSize: 11, fontWeight: '900' },
   fullscreenRoot: { flex: 1, backgroundColor: '#050509' },
+  fullscreenTapArea: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 1 },
   fullscreenHeader: { position: 'absolute', zIndex: 3, top: 12, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 14, backgroundColor: 'rgba(5,5,9,0.62)' },
   fullscreenKicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
   fullscreenTitle: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 2 },
