@@ -19,6 +19,7 @@ export type Room = {
   queue: QueueItem[];
   position: number;
   updatedAt: number;
+  playbackUpdatedAt?: number;
   version: number;
   controllerIds: string[];
 };
