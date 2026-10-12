@@ -1,4 +1,19 @@
-const { withAndroidManifest, withSettingsGradle } = require('@expo/config-plugins');
+const { withAndroidManifest, withSettingsGradle, withAppBuildGradle } = require('@expo/config-plugins');
+
+function withCompileSdk37(config) {
+  return withAppBuildGradle(config, (modConfig) => {
+    const source = modConfig.modResults.contents;
+    const updated = source.replace(
+      /compileSdk\\s+rootProject\\.ext\\.compileSdkVersion/,
+      'compileSdk 37',
+    );
+    if (updated === source && !/compileSdk\\s+37/.test(source)) {
+      throw new Error('VibeMaster player: could not override Android app compileSdk to 37');
+    }
+    modConfig.modResults.contents = updated;
+    return modConfig;
+  });
+}
 
 function withJitPackRepository(config) {
   return withSettingsGradle(config, (modConfig) => {
@@ -72,6 +87,7 @@ function withPlaybackService(config) {
 
 module.exports = function withVibeMasterPlayback(config) {
   config = withJitPackRepository(config);
+  config = withCompileSdk37(config);
   config = withPlaybackService(config);
   return config;
 };
