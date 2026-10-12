@@ -834,7 +834,15 @@ export default function RoomScreen() {
 
       {current ? (
         <View style={[s.player, fullScreen && s.fullscreenVideo]}>
-          {current ? (
+          {current && room?.playbackEngine === 'native' ? (
+            <View style={[s.emptyPlayer, { gap: 12 }]}>
+              <Image source={{ uri: current.thumbnail }} style={{ width: 142, height: 142, borderRadius: 18 }} />
+              <Text style={s.emptyPlayerText}>NATIVE AUDIO</Text>
+              <Text style={{ color: '#c4b5fd', fontSize: 12, textAlign: 'center' }}>
+                {nativePlaybackStatus || 'Synchronizing native playback…'}
+              </Text>
+            </View>
+          ) : current ? (
             <WebView
               key={current.id + '-inline'}
               ref={playerRef}
@@ -878,13 +886,15 @@ export default function RoomScreen() {
               <Text numberOfLines={1} style={s.playerChannel}>{current.channelTitle}</Text>
             </View>
             <TouchableOpacity
-              style={[s.iconButton, { width: 60 }, nativePlaybackActive && { borderColor: '#a78bfa', borderWidth: 1 }]}
-              disabled={nativePlaybackBusy}
-              onPress={() => void (nativePlaybackActive ? toggleNativePlayback() : playCurrentNatively())}
+              style={[s.iconButton, { width: 60 }, room?.playbackEngine === 'native' && { borderColor: '#a78bfa', borderWidth: 1 }]}
+              disabled={nativePlaybackBusy || !canControl}
+              onPress={() => void (room?.playbackEngine === 'native' ? switchRoomToEmbeddedPlayer() : playCurrentNatively(true))}
               accessibilityRole="button"
-              accessibilityLabel={nativePlaybackActive ? 'Toggle native audio playback' : 'Test native audio playback'}
+              accessibilityLabel={room?.playbackEngine === 'native' ? 'Switch room to embedded player' : 'Switch room to native audio'}
             >
-              <Text style={[s.iconButtonText, { fontSize: 10 }]}>{nativePlaybackBusy ? '…' : nativePlaybackActive ? 'NAT ⏯' : 'NAT ▶'}</Text>
+              <Text style={[s.iconButtonText, { fontSize: 10 }]}>
+                {nativePlaybackBusy ? '…' : room?.playbackEngine === 'native' ? (canControl ? 'WEB ↩' : 'NATIVE') : 'NAT ▶'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[s.iconButton, { width: 76 }]}
@@ -906,24 +916,24 @@ export default function RoomScreen() {
 
           {nativePlaybackStatus ? (
             <View style={{ paddingHorizontal: 4, paddingBottom: 8 }}>
-              <Text style={{ color: nativePlaybackActive ? '#c4b5fd' : '#fca5a5', fontSize: 11 }}>
+              <Text style={{ color: room?.playbackEngine === 'native' ? '#c4b5fd' : '#fca5a5', fontSize: 11 }}>
                 {nativePlaybackStatus}
-                {nativePlaybackActive ? ' · ' + formatTime(nativePlaybackPosition) + ' / ' + formatTime(nativePlaybackDuration) : ''}
+                {room?.playbackEngine === 'native' ? ' · ' + formatTime(nativePlaybackPosition) + ' / ' + formatTime(nativePlaybackDuration) : ''}
               </Text>
             </View>
           ) : null}
           <View style={s.scrubWrap}>
             <Slider
-              value={isSeeking ? scrubPosition : playerPosition}
+              value={isSeeking ? scrubPosition : displayedPosition}
               minimumValue={0}
-              maximumValue={Math.max(1, playerDuration)}
-              disabled={!canControl || !playerDuration}
+              maximumValue={Math.max(1, displayedDuration)}
+              disabled={!canControl || !displayedDuration}
               minimumTrackTintColor="#a78bfa"
               maximumTrackTintColor="#302b38"
               thumbTintColor="#c4b5fd"
               onSlidingStart={() => {
                 setIsSeeking(true);
-                setScrubPosition(playerPosition);
+                setScrubPosition(displayedPosition);
               }}
               onValueChange={value => setScrubPosition(value)}
               onSlidingComplete={value => {
@@ -935,29 +945,29 @@ export default function RoomScreen() {
           </View>
 
           <View style={s.playerTimeRow}>
-            <Text style={s.playerTime}>{formatTime(playerPosition)} / {formatTime(playerDuration)}</Text>
+            <Text style={s.playerTime}>{formatTime(displayedPosition)} / {formatTime(displayedDuration)}</Text>
             <Text style={s.playerAccess}>{canControl ? 'PLAYBACK ACCESS' : 'SYNCED'}</Text>
           </View>
 
           {canControl ? (
             <View style={s.compactControls}>
-              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={room?.playbackEngine !== 'native' && !playerReady}>
                 <Text style={s.compactControlText}>⏮</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={room?.playbackEngine !== 'native' && !playerReady}>
                 <Text style={s.compactControlText}>↶</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.mainPlay, (!playerReady) && s.disabled]}
+                style={[s.mainPlay, (room?.playbackEngine !== 'native' && !playerReady) && s.disabled]}
                 onPress={() => void togglePlayback()}
-                disabled={(!playerReady) || !current}
+                disabled={(room?.playbackEngine !== 'native' && !playerReady) || !current}
               >
                 <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={room?.playbackEngine !== 'native' && !playerReady}>
                 <Text style={s.compactControlText}>↷</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={room?.playbackEngine !== 'native' && !playerReady}>
                 <Text style={s.compactControlText}>⏭</Text>
               </TouchableOpacity>
             </View>
