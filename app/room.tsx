@@ -134,9 +134,7 @@ export default function RoomScreen() {
   const endedItemRef = useRef('');
   const [volume, setVolume] = useState(1);
   const [brightness, setBrightness] = useState(0.7);
-  const [fullscreenPlayerReady, setFullscreenPlayerReady] = useState(false);
   const playerRef = useRef<WebView>(null);
-  const fullscreenPlayerRef = useRef<WebView>(null);
   const originalBrightnessRef = useRef<number | null>(null);
   const addedRef = useRef('');
   const isHost = room?.hostId === auth.currentUser?.uid;
@@ -229,7 +227,6 @@ export default function RoomScreen() {
   useEffect(() => {
     endedItemRef.current = '';
     setPlayerReady(false);
-    setFullscreenPlayerReady(false);
     setPlayerError(null);
     setAutoplayBlocked(false);
   }, [current?.id]);
@@ -254,8 +251,7 @@ export default function RoomScreen() {
 
   useEffect(() => {
     if (fullScreen) {
-      setFullscreenPlayerReady(false);
-      setFullscreenControlsVisible(true);
+        setFullscreenControlsVisible(true);
       StatusBar.setHidden(true, 'fade');
       void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
     } else {
@@ -280,8 +276,7 @@ export default function RoomScreen() {
 
   const syncPlayer = () => {
     const activeRef = playerRef;
-    const activeReady = playerReady;
-    if (!room || !current || !activeReady) return;
+    if (!room || !current || !playerReady) return;
     const playbackAnchor = room.playbackUpdatedAt ?? room.updatedAt;
     const elapsed = room.status === 'playing'
       ? Math.max(0, (Date.now() - playbackAnchor) / 1000)
@@ -301,19 +296,18 @@ export default function RoomScreen() {
   };
 
   useEffect(() => {
-    const activeReady = playerReady;
-    if (!room || !current || !activeReady) return;
+    if (!room || !current || !playerReady) return;
     syncPlayer();
     const timer = setInterval(syncPlayer, 3000);
     return () => clearInterval(timer);
-  }, [room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id, playerReady, fullscreenPlayerReady, fullScreen, canControl]);
+  }, [room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id, playerReady, fullScreen, canControl]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') syncPlayer();
     });
     return () => subscription.remove();
-  }, [fullScreen, playerReady, fullscreenPlayerReady, room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id]);
+  }, [fullScreen, playerReady, room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id]);
 
   async function publish(status: Room['status'], position: number) {
     if (!current || !canControl) return;
@@ -333,8 +327,7 @@ export default function RoomScreen() {
       const message = JSON.parse(event.nativeEvent.data) as PlayerMessage;
 
       if (message.type === 'ready') {
-        if (isFullscreenPlayer) setFullscreenPlayerReady(true);
-        else setPlayerReady(true);
+        setPlayerReady(true);
         setPlayerError(null);
         setError(previous => previous.includes('renderer stopped unexpectedly') ? '' : previous);
         return;
@@ -417,8 +410,7 @@ export default function RoomScreen() {
   }
 
   function seekToPosition(position: number) {
-    const activeReady = playerReady;
-    if (!activeReady || !playerDuration || !canControl) return;
+    if (!playerReady || !playerDuration || !canControl) return;
     const target = Math.max(0, Math.min(playerDuration, position));
     const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
@@ -692,23 +684,23 @@ export default function RoomScreen() {
 
           {canControl ? (
             <View style={s.compactControls}>
-              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!playerReady && !fullscreenPlayerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!playerReady}>
                 <Text style={s.compactControlText}>⏮</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!playerReady && !fullscreenPlayerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!playerReady}>
                 <Text style={s.compactControlText}>↶</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.mainPlay, (!playerReady && !fullscreenPlayerReady) && s.disabled]}
+                style={[s.mainPlay, (!playerReady) && s.disabled]}
                 onPress={() => void togglePlayback()}
-                disabled={(!playerReady && !fullscreenPlayerReady) || !current}
+                disabled={(!playerReady) || !current}
               >
                 <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!playerReady && !fullscreenPlayerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!playerReady}>
                 <Text style={s.compactControlText}>↷</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!playerReady && !fullscreenPlayerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!playerReady}>
                 <Text style={s.compactControlText}>⏭</Text>
               </TouchableOpacity>
             </View>
