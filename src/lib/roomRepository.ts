@@ -45,7 +45,7 @@ function cleanQueue(items: QueueItem[]) {
   return items.map(cleanQueueItem);
 }
 
-export async function createRoom(code: string, hostId: string, mode: RoomMode = 'mixed') {
+export async function createRoom(code: string, hostId: string, mode: RoomMode = 'music') {
   const ref = roomRef(code);
   await runTransaction(db, async transaction => {
     const snapshot = await transaction.get(ref);
