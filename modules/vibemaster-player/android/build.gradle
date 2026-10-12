@@ -8,6 +8,7 @@ version = '1.0.0'
 
 android {
   namespace 'com.vibemaster.player'
+  compileSdkVersion 37
   defaultConfig {
     minSdkVersion 26
     versionCode 1
