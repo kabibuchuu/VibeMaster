@@ -34,7 +34,7 @@ function withJitPackRepository(config) {
     // remains untouched.
     modConfig.modResults.contents = source +
       "\ndependencyResolutionManagement {\n" +
-      "    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n" +
+      "    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)\n" +
       "    repositories { maven { url 'https://jitpack.io' }; google(); mavenCentral() }\n" +
       "}\n";
     return modConfig;
