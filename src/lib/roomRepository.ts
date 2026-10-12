@@ -205,6 +205,8 @@ export async function appendQueueItems(code: string, items: QueueItem[]) {
       update.currentItemId = queue[0].id;
       update.status = 'paused';
       update.position = 0;
+      update.playbackRevision = (typeof snapshot.data().playbackRevision === 'number' ? snapshot.data().playbackRevision : 0) + 1;
+      update.playbackStartedAt = null;
       update.playbackUpdatedAt = serverTimestamp();
     }
     transaction.update(ref, update);
