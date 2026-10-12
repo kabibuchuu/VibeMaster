@@ -553,12 +553,43 @@ export default function RoomScreen() {
       seekToFraction(0);
       return;
     }
-    const next = queue[index + direction];
-    if (!next) return;
+
+    const queuedTarget = queue[index + direction];
+    if (queuedTarget) {
+      try {
+        await setCurrentItem(roomCode, queuedTarget.id, 'playing', 0);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not change track.');
+      }
+      return;
+    }
+
+    // If the queue has no item in this direction, keep playback moving with a related recommendation.
+    const queuedIds = new Set(queue.map(item => item.videoId || item.id));
+    const available = recommendations.filter(item => item.kind !== 'playlist' && !queuedIds.has(item.id) && item.id !== current.videoId);
+    const fallback = direction > 0 ? available[0] : available[available.length - 1];
+    if (!fallback) {
+      setError(direction > 0 ? 'Nothing is queued and no recommendations are available yet.' : 'There is no previous track in the queue yet.');
+      return;
+    }
+
+    setAddingRecommendation(fallback.id);
     try {
-      await setCurrentItem(roomCode, next.id, 'playing', 0);
+      await addQueueItem(roomCode, {
+        id: fallback.id,
+        videoId: fallback.id,
+        title: fallback.title,
+        channelTitle: fallback.channelTitle,
+        thumbnail: fallback.thumbnail,
+        duration: fallback.duration,
+        kind: fallback.kind === 'music' ? 'music' : 'video',
+      });
+      await setCurrentItem(roomCode, fallback.id, 'playing', 0);
+      setRecommendations(previous => previous.filter(item => item.id !== fallback.id));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not change track.');
+      setError(e instanceof Error ? e.message : 'Could not play a related recommendation.');
+    } finally {
+      setAddingRecommendation(null);
     }
   }
 
