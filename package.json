@@ -8,23 +8,30 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:voice-functions": "npm --prefix functions run build"
   },
   "dependencies": {
+    "@config-plugins/react-native-webrtc": "^12.0.0",
+    "@livekit/react-native": "^2.9.6",
+    "@livekit/react-native-expo-plugin": "^1.0.1",
+    "@livekit/react-native-webrtc": "^125.0.0",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/slider": "5.1.2",
     "expo": "~55.0.0",
+    "expo-audio": "~1.2.0",
+    "expo-brightness": "~55.0.17",
+    "expo-constants": "~55.0.17",
+    "expo-linking": "~55.0.17",
     "expo-router": "~55.0.18",
+    "expo-screen-orientation": "~55.0.17",
     "firebase": "^12.0.0",
+    "livekit-client": "^2.15.6",
     "react": "19.2.0",
     "react-native": "0.83.10",
     "react-native-safe-area-context": "~5.6.2",
     "react-native-screens": "~4.23.0",
-    "react-native-webview": "13.16.0",
-    "expo-constants": "~55.0.17",
-    "expo-linking": "~55.0.17",
-    "expo-brightness": "~55.0.17",
-    "expo-screen-orientation": "~55.0.17",
-    "@react-native-community/slider": "5.1.2"
+    "react-native-webview": "13.16.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",
