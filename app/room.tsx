@@ -994,10 +994,9 @@ export default function RoomScreen() {
                 </TouchableOpacity>
               </View>
             ) : null}
-          </View>
-  
             </>
           ) : null}
+        </View>
       </Modal>
 
       <Modal visible={chatOpen && joined} transparent animationType="slide" onRequestClose={() => setChatOpen(false)} statusBarTranslucent>
