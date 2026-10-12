@@ -130,6 +130,8 @@ export default function RoomScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
   const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
+  const [fullscreenInteraction, setFullscreenInteraction] = useState(0);
+  const endedItemRef = useRef('');
   const [volume, setVolume] = useState(1);
   const [brightness, setBrightness] = useState(0.7);
   const [fullscreenPlayerReady, setFullscreenPlayerReady] = useState(false);
@@ -269,7 +271,12 @@ export default function RoomScreen() {
       setSettingsOpen(false);
     }, 2500);
     return () => clearTimeout(timer);
-  }, [fullScreen, fullscreenControlsVisible]);
+  }, [fullScreen, fullscreenControlsVisible, fullscreenInteraction]);
+
+  function revealFullscreenControls() {
+    setFullscreenControlsVisible(true);
+    setFullscreenInteraction(value => value + 1);
+  }
 
   const syncPlayer = () => {
     const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
@@ -354,25 +361,29 @@ export default function RoomScreen() {
         return;
       }
 
-      if (message.type === 'state') {
-        if (message.state === 0) {
-          const queue = room?.queue ?? [];
-          const index = queue.findIndex(item => item.id === current?.id);
-          const next = index >= 0 ? queue[index + 1] : undefined;
-          if (next) {
-            await setCurrentItem(roomCode, next.id, 'playing', 0);
-          } else {
-            await publish('paused', message.position);
-          }
-        } else if (message.state === 1) {
-          await publish('playing', message.position);
-        } else if (message.state === 2) {
+      if (message.type === 'state' && message.state === 0 && isHost && current) {
+        // Only the host advances the queue; controller devices must not race to change tracks.
+        if (endedItemRef.current === current.id) return;
+        endedItemRef.current = current.id;
+        const queue = room?.queue ?? [];
+        const index = queue.findIndex(item => item.id === current.id);
+        const next = index >= 0 ? queue[index + 1] : undefined;
+        if (next) {
+          await setCurrentItem(roomCode, next.id, 'playing', 0);
+        } else {
           await publish('paused', message.position);
         }
       }
     } catch {
       // Ignore malformed WebView messages.
     }
+  }
+
+  async function togglePlayback() {
+    if (!canControl || !current) return;
+    const nextStatus: Room['status'] = room?.status === 'playing' ? 'paused' : 'playing';
+    await publish(nextStatus, playerPosition);
+    command(nextStatus === 'playing' ? 'playVideo();' : 'pauseVideo();');
   }
 
   function command(script: string) {
@@ -677,7 +688,7 @@ export default function RoomScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.mainPlay, (!playerReady && !fullscreenPlayerReady) && s.disabled]}
-                onPress={() => command(room.status === 'playing' ? 'pauseVideo();' : 'playVideo();')}
+                onPress={() => void togglePlayback()}
                 disabled={(!playerReady && !fullscreenPlayerReady) || !current}
               >
                 <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
@@ -917,7 +928,7 @@ export default function RoomScreen() {
           <TouchableOpacity
             activeOpacity={1}
             style={s.fullscreenTapArea}
-            onPress={() => setFullscreenControlsVisible(value => !value)}
+            onPress={revealFullscreenControls}
           />
           {fullscreenControlsVisible ? (
             <>
