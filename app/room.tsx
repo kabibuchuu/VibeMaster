@@ -806,6 +806,15 @@ export default function RoomScreen() {
               <Text numberOfLines={1} style={s.playerChannel}>{current.channelTitle}</Text>
             </View>
             <TouchableOpacity
+              style={[s.iconButton, { width: 60 }, nativePlaybackActive && { borderColor: '#a78bfa', borderWidth: 1 }]}
+              disabled={nativePlaybackBusy}
+              onPress={() => void (nativePlaybackActive ? toggleNativePlayback() : playCurrentNatively())}
+              accessibilityRole="button"
+              accessibilityLabel={nativePlaybackActive ? 'Toggle native audio playback' : 'Test native audio playback'}
+            >
+              <Text style={[s.iconButtonText, { fontSize: 10 }]}>{nativePlaybackBusy ? '…' : nativePlaybackActive ? 'NAT ⏯' : 'NAT ▶'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[s.iconButton, { width: 76 }]}
               onPress={() => void openInYouTubeMusic({ kind: 'music', id: current.videoId }).catch(() =>
                 Alert.alert('Could not open YouTube Music', 'Open YouTube Music on your device and try again.')
@@ -823,6 +832,14 @@ export default function RoomScreen() {
             </TouchableOpacity>
           </View>
 
+          {nativePlaybackStatus ? (
+            <View style={{ paddingHorizontal: 4, paddingBottom: 8 }}>
+              <Text style={{ color: nativePlaybackActive ? '#c4b5fd' : '#fca5a5', fontSize: 11 }}>
+                {nativePlaybackStatus}
+                {nativePlaybackActive ? ' · ' + formatTime(nativePlaybackPosition) + ' / ' + formatTime(nativePlaybackDuration) : ''}
+              </Text>
+            </View>
+          ) : null}
           <View style={s.scrubWrap}>
             <Slider
               value={isSeeking ? scrubPosition : playerPosition}
