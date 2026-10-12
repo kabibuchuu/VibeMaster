@@ -9,7 +9,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "build:voice-functions": "npm --prefix functions run build"
+    "build:voice-functions": "npm --prefix functions run build",
+    "build:android:debug": "expo prebuild --platform android --clean && cd android && ./gradlew assembleDebug",
+    "test:room-sync": "node --test tests/room-sync.test.cjs"
   },
   "dependencies": {
     "@config-plugins/react-native-webrtc": "^14.0.0",
