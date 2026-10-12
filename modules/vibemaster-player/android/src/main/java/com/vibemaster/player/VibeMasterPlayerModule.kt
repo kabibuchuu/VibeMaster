@@ -87,6 +87,10 @@ class VibeMasterPlayerModule : Module() {
             true
         }
         AsyncFunction("stop") { getController().stop(); true }
+        AsyncFunction("setVolume") { volume: Double ->
+            getController().volume = volume.toFloat().coerceIn(0f, 1f)
+            true
+        }
         AsyncFunction("getState") {
             val player = getController()
             mapOf(
