@@ -34,6 +34,7 @@ type VibeMasterPlayerNativeModule = {
   setQueue(tracks: NativeQueueTrack[], startIndex: number): Promise<boolean>;
   pause(): Promise<boolean>;
   stop(): Promise<boolean>;
+  setVolume(volume: number): Promise<boolean>;
   resume(): Promise<boolean>;
   seekTo(positionMs: number): Promise<boolean>;
   skipNext(): Promise<boolean>;
@@ -63,6 +64,7 @@ export const nativePlayback = {
   setQueue: (tracks: NativeQueueTrack[], startIndex = 0) => getNativeModule().setQueue(tracks, startIndex),
   pause: () => getNativeModule().pause(),
   stop: () => getNativeModule().stop(),
+  setVolume: (volume: number) => getNativeModule().setVolume(Math.max(0, Math.min(1, volume))),
   resume: () => getNativeModule().resume(),
   seekTo: (positionMs: number) => getNativeModule().seekTo(positionMs),
   skipNext: () => getNativeModule().skipNext(),
