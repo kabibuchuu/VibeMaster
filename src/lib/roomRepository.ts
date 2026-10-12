@@ -54,6 +54,7 @@ export async function createRoom(code: string, hostId: string, mode: RoomMode = 
       hostId,
       mode,
       status: 'waiting',
+      playbackEngine: 'iframe',
       currentItemId: '',
       queue: [],
       position: 0,
