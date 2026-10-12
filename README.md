@@ -8,9 +8,9 @@ This branch is an in-progress reconstruction, not a release-ready app.
 
 - Music-only discovery and room-creation UI: implemented in this branch.
 - Room state, queue, participants, and text chat: existing Firebase/Firestore implementation.
-- Actual playback: still uses the YouTube IFrame Player API in a WebView. It is **not yet a native audio-only engine**.
+- Legacy room playback still uses the YouTube IFrame Player API in a WebView. A native Media3/ExoPlayer service and an InnerTubeX resolver have been added, with an in-room `NAT ▶` test action. **Native playback is experimental and has not yet passed an Android build or device test.**
 - Voice chat: a LiveKit room screen and Firebase callable token issuer have now been added on this branch. This is implementation groundwork, not yet a verified end-to-end feature: install dependencies, deploy the function, configure LiveKit secrets, build a dev APK, and test with two physical devices.
-- Native Android playback, background controls, and end-to-end multi-device sync: not complete or validated.
+- The native Media3 playback path has not yet been validated by an Android Gradle build or physical-device test. Room synchronization still controls the legacy WebView player; native player state is not yet wired into shared-room reconciliation.
 
 Do not describe this branch as delivering audio-only playback or voice chat until those systems are implemented and tested on real Android devices.
 
@@ -19,8 +19,14 @@ Do not describe this branch as delivering audio-only playback or voice chat unti
 - React Native + Expo + TypeScript / Expo Router
 - Firebase Authentication + Cloud Firestore
 - YouTube Data API v3 for discovery
-- YouTube IFrame Player API in `react-native-webview` for current playback
+- YouTube IFrame Player API in `react-native-webview` as the legacy room player; native Media3/ExoPlayer service and GPL-3.0 InnerTubeX resolver are now experimental additions
 - Expo Audio configured for background-capable native audio, LiveKit React Native for voice, Expo Screen Orientation and React Native Community Slider
+
+## Experimental native playback path
+
+The in-room **NAT ▶** action asks the native InnerTubeX adapter to resolve the current YouTube video ID, then sends the short-lived audio URI and request headers to Media3/ExoPlayer. It pauses the WebView player first to prevent overlapping audio. This is a test path, not yet the authoritative room player; queue sync and playhead drift correction still target the WebView player. Stream resolution can fail for tracks requiring tokens or client profiles not enabled in this minimal adapter. Resolved audio URLs expire and must not be stored in Firestore.
+
+Metrolist and BitChord are GPL-3.0 projects and the InnerTubeX library used here is GPL-3.0. Review `docs/metrolist-reuse-audit.md` and retain notices/source compliance before distributing a build. GPL licensing does not grant rights to the audio, and the unofficial integration may fail or be affected by provider-side changes.
 
 ## Target architecture
 
@@ -110,4 +116,4 @@ The callable only mints a token for an authenticated user who already has a part
 - The official YouTube API does not provide an ordinary third-party audio-only stream endpoint. If native background playback is a hard requirement, obtain explicit written authorization for a YouTube integration or use a separately licensed audio provider.
 - Firebase configuration/authentication must be validated in the target environment.
 - Voice chat requires a LiveKit project and deployment of the Firebase callable. It has not been built or verified on physical devices in this change.
-- The app's catalogue returns YouTube video IDs, not direct audio URLs. VibeMaster cannot control playback once a user hands a track to the external YouTube Music app, so cross-device synchronization of that external playback is not implemented.
+- The catalog returns stable YouTube video IDs. The native resolver only gets a temporary playable audio URI at playback time; it does not store it in Firestore. External YouTube Music handoff remains uncontrollable, and native playback is not yet synchronized across room participants.
