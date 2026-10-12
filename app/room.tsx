@@ -36,6 +36,7 @@ import {
   setCurrentItem,
   updatePlayback,
   updateRoom,
+  setPlaybackEngine,
   watchMessages,
   watchParticipants,
   watchRoom,
@@ -219,7 +220,11 @@ export default function RoomScreen() {
       // successfully resolves and starts the track. Other members then resolve
       // the same stable video ID locally; short-lived URLs never enter Firestore.
       if (publishRoomEngine) {
-        await updateRoom(roomCode, { playbackEngine: 'native' });
+        await setPlaybackEngine(roomCode, 'native', {
+          status: 'playing',
+          position: 0,
+          currentItemId: selected.id,
+        });
       }
     } catch (e) {
       nativeFailedItemRef.current = selected.id;
@@ -242,7 +247,7 @@ export default function RoomScreen() {
   async function switchRoomToEmbeddedPlayer() {
     if (!canControl) return;
     try {
-      await updateRoom(roomCode, { playbackEngine: 'iframe' });
+      await setPlaybackEngine(roomCode, 'iframe');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not switch the room back to the embedded player.');
     }
