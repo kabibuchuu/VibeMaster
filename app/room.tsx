@@ -179,7 +179,7 @@ export default function RoomScreen() {
   }, [room, isHost, me, roomCode]);
 
   useEffect(() => {
-    if (!room || !isHost) return;
+    if (!room || !canControl) return;
 
     if (playlistId && addedRef.current !== String(playlistId)) {
       addedRef.current = String(playlistId);
@@ -213,7 +213,7 @@ export default function RoomScreen() {
     }
   }, [
     room,
-    isHost,
+    canControl,
     videoId,
     playlistId,
     title,
