@@ -142,14 +142,14 @@ export async function publishPlaybackAnchor(
  * Position is milliseconds. The source/player must resolve the same track on
  * every client; this helper only defines the shared clock arithmetic.
  */
-export function estimateRoomPositionMs(
+export function estimateRoomPositionSeconds(
   room: Pick<Room, 'status' | 'position' | 'playbackUpdatedAt'>,
   nowMs = Date.now(),
 ) {
   const anchor = Math.max(0, room.position);
   if (room.status !== 'playing') return anchor;
   const updatedAt = room.playbackUpdatedAt ?? nowMs;
-  return anchor + Math.max(0, nowMs - updatedAt);
+  return anchor + Math.max(0, (nowMs - updatedAt) / 1000);
 }
 
 /**
