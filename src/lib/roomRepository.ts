@@ -58,6 +58,8 @@ export async function createRoom(code: string, hostId: string, mode: RoomMode = 
       queue: [],
       position: 0,
       playbackUpdatedAt: serverTimestamp(),
+      playbackRevision: 0,
+      playbackStartedAt: null,
       ...touch(),
       createdAt: serverTimestamp(),
     });
@@ -302,6 +304,8 @@ function normalizeRoom(code: string, data: Record<string, unknown>): Room {
     currentItemId: typeof data.currentItemId === 'string' ? data.currentItemId : '',
     position: typeof data.position === 'number' ? Math.max(0, data.position) : 0,
     version: typeof data.version === 'number' ? data.version : 0,
+    playbackRevision: typeof data.playbackRevision === 'number' ? data.playbackRevision : 0,
+    playbackStartedAt: typeof data.playbackStartedAt === 'number' ? data.playbackStartedAt : null,
     controllerIds: Array.isArray(data.controllerIds) ? (data.controllerIds as string[]) : [],
   };
 }
