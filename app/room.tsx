@@ -264,7 +264,10 @@ export default function RoomScreen() {
 
   useEffect(() => {
     if (!fullScreen || !fullscreenControlsVisible) return;
-    const timer = setTimeout(() => setFullscreenControlsVisible(false), 3500);
+    const timer = setTimeout(() => {
+      setFullscreenControlsVisible(false);
+      setSettingsOpen(false);
+    }, 2500);
     return () => clearTimeout(timer);
   }, [fullScreen, fullscreenControlsVisible]);
 
@@ -435,7 +438,7 @@ export default function RoomScreen() {
   }
 
   async function selectItem(item: QueueItem) {
-    if (!isHost) return;
+    if (!canControl) return;
     try {
       await setCurrentItem(roomCode, item.id, 'paused', 0);
     } catch (e) {
@@ -444,7 +447,7 @@ export default function RoomScreen() {
   }
 
   async function removeItem(item: QueueItem) {
-    if (!isHost || item.id === current?.id) return;
+    if (!canControl || item.id === current?.id) return;
     try {
       await removeQueueItem(roomCode, item.id);
     } catch (e) {
@@ -453,7 +456,7 @@ export default function RoomScreen() {
   }
 
   async function moveItem(item: QueueItem, direction: 'up' | 'down') {
-    if (!isHost) return;
+    if (!canControl) return;
     try {
       await moveQueueItem(roomCode, item.id, direction);
     } catch (e) {
@@ -830,7 +833,7 @@ export default function RoomScreen() {
               <Text style={s.chatToggle}>{chatOpen ? 'Hide chat' : 'Chat'}</Text>
             </TouchableOpacity>
           ) : null}
-          {isHost ? (
+          {canControl ? (
             <TouchableOpacity
               onPress={() =>
                 router.push({
@@ -848,7 +851,7 @@ export default function RoomScreen() {
       <ScrollView contentContainerStyle={s.queue} keyboardShouldPersistTaps="handled">
         {room.queue.filter(item => item.id !== current?.id).map((item, index) => (
           <View key={item.id} style={[s.queueItem, item.id === current?.id && s.currentQueueItem]}>
-            <TouchableOpacity style={s.queueMain} onPress={() => void selectItem(item)} disabled={!isHost}>
+            <TouchableOpacity style={s.queueMain} onPress={() => void selectItem(item)} disabled={!canControl}>
               <Image source={{ uri: item.thumbnail }} style={s.qThumb} />
               <View style={{ flex: 1 }}>
                 <Text numberOfLines={1} style={s.qTitle}>{index + 1}. {item.title}</Text>
@@ -857,7 +860,7 @@ export default function RoomScreen() {
                 </Text>
               </View>
             </TouchableOpacity>
-            {isHost ? (
+            {canControl ? (
               <View style={s.itemActions}>
                 <TouchableOpacity onPress={() => void moveItem(item, 'up')}>
                   <Text style={s.itemAction}>↑</Text>
@@ -914,7 +917,7 @@ export default function RoomScreen() {
           <TouchableOpacity
             activeOpacity={1}
             style={s.fullscreenTapArea}
-            onPress={() => setFullscreenControlsVisible(true)}
+            onPress={() => setFullscreenControlsVisible(value => !value)}
           />
           {fullscreenControlsVisible ? (
             <>
