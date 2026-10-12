@@ -1,0 +1,19 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.vibemaster.player'
+version = '1.0.0'
+
+android {
+  namespace 'com.vibemaster.player'
+  defaultConfig {
+    minSdkVersion 26
+  }
+}
+
+dependencies {
+  implementation 'androidx.media3:media3-exoplayer:1.8.0'
+  implementation 'androidx.media3:media3-session:1.8.0'
+}
