@@ -1139,7 +1139,7 @@ const s = StyleSheet.create({
   fullscreenChannel: { color: '#777481', fontSize: 11, marginTop: 2 },
   fullscreenClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
   fullscreenCloseText: { color: '#fff', fontSize: 25, lineHeight: 27 },
-  fullscreenVideo: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, borderRadius: 0, backgroundColor: '#000', overflow: 'hidden', zIndex: 20, elevation: 20 },
+  fullscreenVideo: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, width: '100%', height: '100%', borderRadius: 0, backgroundColor: '#000', overflow: 'hidden', zIndex: 20, elevation: 20 },
   fullscreenControls: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 66, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 8, backgroundColor: 'rgba(5,5,9,0.56)', borderRadius: 18 },
   fullscreenProgress: { position: 'absolute', zIndex: 30, elevation: 30, left: 18, right: 18, bottom: 48 },
   fullscreenTimeRow: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 12, left: 22, right: 22, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(5,5,9,0.56)' },
