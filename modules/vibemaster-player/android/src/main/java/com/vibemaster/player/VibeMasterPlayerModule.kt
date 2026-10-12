@@ -66,6 +66,7 @@ class VibeMasterPlayerModule : Module() {
             else player.seekTo(0L)
             true
         }
+        AsyncFunction("stop") { getController().stop(); true }
         AsyncFunction("getState") {
             val player = getController()
             mapOf(
@@ -102,11 +103,17 @@ class VibeMasterPlayerModule : Module() {
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            val player = controller
             sendEvent(
                 "playbackStateChanged",
                 mapOf(
                     "playbackState" to playbackState,
-                    "isPlaying" to (controller?.isPlaying ?: false),
+                    "isPlaying" to (player?.isPlaying ?: false),
+                    "positionMs" to (player?.currentPosition ?: 0L),
+                    "durationMs" to (player?.duration?.coerceAtLeast(0L) ?: 0L),
+                    "currentIndex" to (player?.currentMediaItemIndex ?: 0),
+                    "title" to (player?.mediaMetadata?.title?.toString().orEmpty()),
+                    "artist" to (player?.mediaMetadata?.artist?.toString().orEmpty()),
                 ),
             )
         }
