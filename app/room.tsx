@@ -153,6 +153,62 @@ export default function RoomScreen() {
   const queuedVideoIds = (room?.queue ?? []).map(item => item.videoId || item.id).join('|');
 
   useEffect(() => {
+    const subscription = nativePlayback.addPlaybackListener((event: NativePlaybackEvent) => {
+      if (typeof event.isPlaying === 'boolean') {
+        setNativePlaybackStatus(event.isPlaying ? 'Playing via native player' : 'Native player paused');
+      }
+      if (typeof event.positionMs === 'number') setNativePlaybackPosition(event.positionMs / 1000);
+      if (typeof event.durationMs === 'number') setNativePlaybackDuration(event.durationMs / 1000);
+    });
+    return () => subscription.remove();
+  }, []);
+
+  async function playCurrentNatively() {
+    if (!current || nativePlaybackBusy) return;
+    setNativePlaybackBusy(true);
+    setNativePlaybackStatus('Resolving audio stream…');
+    try {
+      const stream = await nativePlayback.resolveTrack(current.videoId);
+      // Pause the visible WebView source before starting native audio to prevent overlap.
+      playerRef.current?.injectJavaScript('try{if(window.vmPlayer){window.vmPlayer.pauseVideo();}}catch(e){};true;');
+      await nativePlayback.play({
+        uri: stream.url,
+        title: current.title,
+        artist: current.channelTitle,
+        headers: stream.headers,
+      });
+      setNativePlaybackActive(true);
+      setNativePlaybackStatus('Native audio playing');
+      const state = await nativePlayback.getState();
+      setNativePlaybackPosition(state.positionMs / 1000);
+      setNativePlaybackDuration(state.durationMs / 1000);
+    } catch (e) {
+      setNativePlaybackStatus(e instanceof Error ? e.message : 'Native playback could not start.');
+      Alert.alert(
+        'Native playback failed',
+        e instanceof Error ? e.message : 'No playable audio stream was returned. Try another track.',
+      );
+    } finally {
+      setNativePlaybackBusy(false);
+    }
+  }
+
+  async function toggleNativePlayback() {
+    try {
+      const state = await nativePlayback.getState();
+      if (state.isPlaying) {
+        await nativePlayback.pause();
+        setNativePlaybackStatus('Native player paused');
+      } else {
+        await nativePlayback.resume();
+        setNativePlaybackStatus('Native player playing');
+      }
+    } catch (e) {
+      setNativePlaybackStatus(e instanceof Error ? e.message : 'Native player is unavailable.');
+    }
+  }
+
+  useEffect(() => {
     if (!roomCode) {
       setRoomLoaded(true);
       return;
