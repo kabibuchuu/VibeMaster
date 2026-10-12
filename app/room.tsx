@@ -146,6 +146,7 @@ export default function RoomScreen() {
   const me = people.find(person => person.id === auth.currentUser?.uid);
   const joined = Boolean(me);
   const current = room?.queue?.find(item => item.id === room.currentItemId) ?? room?.queue?.[0];
+  const queuedVideoIds = (room?.queue ?? []).map(item => item.videoId || item.id).join('|');
 
   useEffect(() => {
     if (!roomCode) {
@@ -239,13 +240,13 @@ export default function RoomScreen() {
     void searchYouTube(query, current.kind === 'music' ? 'music' : 'video')
       .then(items => {
         if (cancelled) return;
-        const queuedIds = new Set((room?.queue ?? []).map(item => item.videoId || item.id));
+        const queuedIds = new Set(queuedVideoIds.split('|'));
         setRecommendations(items.filter(item => item.kind !== 'playlist' && item.id !== current.videoId && !queuedIds.has(item.id)).slice(0, 10));
       })
       .catch(() => { if (!cancelled) setRecommendations([]); })
       .finally(() => { if (!cancelled) setRecommendationsLoading(false); });
     return () => { cancelled = true; };
-  }, [current?.id, current?.title, current?.channelTitle, current?.kind, room?.queue]);
+  }, [current?.id, current?.title, current?.channelTitle, current?.kind, queuedVideoIds]);
 
   useEffect(() => {
     endedItemRef.current = '';
