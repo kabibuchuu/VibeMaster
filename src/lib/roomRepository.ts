@@ -151,12 +151,31 @@ export function estimateRoomPositionMs(
   return anchor + Math.max(0, nowMs - updatedAt);
 }
 
+/**
+ * Write a coherent timestamped playback command, incrementing a revision
+ * transactionally so devices can discard stale snapshots.
+ */
 export async function updatePlayback(
   code: string,
   data: Pick<Room, 'status' | 'position' | 'currentItemId'>,
 ) {
-  await updateRoom(code, data);
+  const ref = roomRef(code);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists()) throw new Error('ROOM_NOT_FOUND');
+    const room = snapshot.data();
+    const previous = typeof room.playbackRevision === 'number' ? room.playbackRevision : 0;
+    transaction.update(ref, {
+      ...data,
+      position: Math.max(0, data.position),
+      playbackRevision: previous + 1,
+      playbackStartedAt: data.status === 'playing' ? Date.now() : null,
+      playbackUpdatedAt: serverTimestamp(),
+      ...touch(),
+    });
+  });
 }
+
 
 export async function addQueueItem(code: string, item: QueueItem) {
   await appendQueueItems(code, [item]);
