@@ -1,5 +1,4 @@
-import { requireNativeModule } from 'expo-modules-core';
-import { EventEmitter } from 'expo-modules-core';
+import { EventEmitter, requireNativeModule } from 'expo-modules-core';
 
 export type NativeQueueTrack = {
   uri: string;
@@ -28,39 +27,29 @@ type VibeMasterPlayerNativeModule = {
   skipNext(): Promise<boolean>;
   skipPrevious(): Promise<boolean>;
   getState(): Promise<NativePlaybackState>;
-  addListener(eventName: 'playbackStateChanged', listener: (event: NativePlaybackEvent) => void): { remove(): void };
 };
 
-let nativeModule: VibeMasterPlayerNativeModule | null = null;
+const nativeModule = requireNativeModule<VibeMasterPlayerNativeModule & {
+  addListener(eventName: string, listener: (event: NativePlaybackEvent) => void): { remove(): void };
+}>('VibeMasterPlayer');
 
-function player(): VibeMasterPlayerNativeModule {
-  if (nativeModule) return nativeModule;
-  nativeModule = requireNativeModule<VibeMasterPlayerNativeModule>('VibeMasterPlayer');
-  return nativeModule;
-}
-
-/**
- * Native Media3 playback boundary. Track URIs must come from a source adapter;
- * this module deliberately does not resolve or manufacture streaming URLs.
- */
-let eventEmitter: EventEmitter<VibeMasterPlayerNativeModule> | null = null;
-
-function events() {
-  const native = player();
-  if (!eventEmitter) eventEmitter = new EventEmitter(native);
-  return eventEmitter;
-}
+const eventEmitter = new EventEmitter(nativeModule as never);
 
 export const nativePlayback = {
-  play: (track: NativeQueueTrack) => player().play(track.uri, track.title, track.artist),
-  setQueue: (tracks: NativeQueueTrack[], startIndex = 0) => player().setQueue(tracks, startIndex),
-  pause: () => player().pause(),
-  stop: () => player().stop(),
-  resume: () => player().resume(),
-  seekTo: (positionMs: number) => player().seekTo(positionMs),
-  skipNext: () => player().skipNext(),
-  skipPrevious: () => player().skipPrevious(),
-  getState: () => player().getState(),
+  play: (track: NativeQueueTrack) => nativeModule.play(track.uri, track.title, track.artist),
+  setQueue: (tracks: NativeQueueTrack[], startIndex = 0) => nativeModule.setQueue(tracks, startIndex),
+  pause: () => nativeModule.pause(),
+  stop: () => nativeModule.stop(),
+  resume: () => nativeModule.resume(),
+  seekTo: (positionMs: number) => nativeModule.seekTo(positionMs),
+  skipNext: () => nativeModule.skipNext(),
+  skipPrevious: () => nativeModule.skipPrevious(),
+  getState: () => nativeModule.getState(),
   addPlaybackListener: (listener: (event: NativePlaybackEvent) => void) =>
-    events().addListener('playbackStateChanged', listener),
+    eventEmitter.addListener('playbackStateChanged', listener),
 };
+
+/**
+ * Native Media3 playback boundary. Track URIs must be supplied by a provider
+ * adapter; this layer does not resolve or manufacture streaming URLs.
+ */
