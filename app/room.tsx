@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -258,6 +259,15 @@ export default function RoomScreen() {
       StatusBar.setHidden(false, 'fade');
       void ScreenOrientation.unlockAsync().catch(() => {});
     }
+  }, [fullScreen]);
+
+  useEffect(() => {
+    if (!fullScreen) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setFullScreen(false);
+      return true;
+    });
+    return () => subscription.remove();
   }, [fullScreen]);
 
   useEffect(() => {
@@ -589,7 +599,7 @@ export default function RoomScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView style={s.c} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={[s.c, fullScreen && { paddingHorizontal: 0 }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
           <Text style={s.back}>‹</Text>
