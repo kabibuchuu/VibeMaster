@@ -41,6 +41,7 @@ import {
 } from '../src/lib/roomRepository';
 import { getPlaylistItems, searchYouTube, type YouTubeResult } from '../src/lib/youtube';
 import { openInYouTubeMusic } from '../src/lib/youtubeMusic';
+import { nativePlayback, type NativePlaybackEvent } from '../src/lib/nativePlayback';
 import type { Participant, QueueItem, Room, RoomMessage } from '../src/types/room';
 
 type PlayerMessage =
@@ -137,6 +138,11 @@ export default function RoomScreen() {
   const [addingRecommendation, setAddingRecommendation] = useState<string | null>(null);
   const endedItemRef = useRef('');
   const [volume, setVolume] = useState(1);
+  const [nativePlaybackActive, setNativePlaybackActive] = useState(false);
+  const [nativePlaybackBusy, setNativePlaybackBusy] = useState(false);
+  const [nativePlaybackStatus, setNativePlaybackStatus] = useState('');
+  const [nativePlaybackPosition, setNativePlaybackPosition] = useState(0);
+  const [nativePlaybackDuration, setNativePlaybackDuration] = useState(0);
   const playerRef = useRef<WebView>(null);
   const addedRef = useRef('');
   const isHost = room?.hostId === auth.currentUser?.uid;
