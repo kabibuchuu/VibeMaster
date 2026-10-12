@@ -1,11 +1,6 @@
 import { EventEmitter, requireNativeModule } from 'expo-modules-core';
 
-export type NativeQueueTrack = {
-  uri: string;
-  title: string;
-  artist: string;
-};
-
+export type NativeQueueTrack = { uri: string; title: string; artist: string };
 export type NativePlaybackState = {
   isPlaying: boolean;
   positionMs: number;
@@ -14,7 +9,6 @@ export type NativePlaybackState = {
   title: string;
   artist: string;
 };
-
 export type NativePlaybackEvent = Partial<NativePlaybackState> & { playbackState?: number };
 
 type VibeMasterPlayerNativeModule = {
@@ -27,13 +21,11 @@ type VibeMasterPlayerNativeModule = {
   skipNext(): Promise<boolean>;
   skipPrevious(): Promise<boolean>;
   getState(): Promise<NativePlaybackState>;
+  addListener(eventName: string, listener: (event: NativePlaybackEvent) => void): { remove(): void };
 };
 
-const nativeModule = requireNativeModule<VibeMasterPlayerNativeModule & {
-  addListener(eventName: string, listener: (event: NativePlaybackEvent) => void): { remove(): void };
-}>('VibeMasterPlayer');
-
-const eventEmitter = new EventEmitter(nativeModule as never);
+const nativeModule = requireNativeModule<VibeMasterPlayerNativeModule>('VibeMasterPlayer');
+const eventEmitter = new EventEmitter(nativeModule);
 
 export const nativePlayback = {
   play: (track: NativeQueueTrack) => nativeModule.play(track.uri, track.title, track.artist),
@@ -49,7 +41,4 @@ export const nativePlayback = {
     eventEmitter.addListener('playbackStateChanged', listener),
 };
 
-/**
- * Native Media3 playback boundary. Track URIs must be supplied by a provider
- * adapter; this layer does not resolve or manufacture streaming URLs.
- */
+/** Native Media3 controls; playable URIs must be supplied by a source adapter. */
