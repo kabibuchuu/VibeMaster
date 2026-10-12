@@ -32,7 +32,9 @@
     "react-native-screens": "~4.23.0",
     "react-native-webview": "13.16.0",
     "expo-asset": "~55.0.20",
-    "expo-font": "~55.0.8"
+    "expo-font": "~55.0.8",
+    "expo-modules-core": "~55.0.15",
+    "@vibemaster/native-player": "file:./modules/vibemaster-player"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",
