@@ -23,7 +23,7 @@ service cloud.firestore {
 
     function validRoom(data) {
       return data.hostId is string
-        && data.mode in ['music', 'video', 'mixed']
+        && data.mode == 'music'
         && data.status in ['waiting', 'playing', 'paused']
         && data.currentItemId is string
         && data.position is number
