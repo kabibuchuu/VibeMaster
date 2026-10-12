@@ -227,6 +227,7 @@ export default function RoomScreen() {
   ]);
 
   useEffect(() => {
+    endedItemRef.current = '';
     setPlayerReady(false);
     setFullscreenPlayerReady(false);
     setPlayerError(null);
@@ -282,8 +283,9 @@ export default function RoomScreen() {
     const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
     const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
     if (!room || !current || !activeReady) return;
+    const playbackAnchor = room.playbackUpdatedAt ?? room.updatedAt;
     const elapsed = room.status === 'playing'
-      ? Math.max(0, (Date.now() - room.updatedAt) / 1000)
+      ? Math.max(0, (Date.now() - playbackAnchor) / 1000)
       : 0;
     const target = Math.max(0, room.position + elapsed);
     const desiredState = room.status === 'playing' ? 1 : 2;
@@ -305,7 +307,7 @@ export default function RoomScreen() {
     syncPlayer();
     const timer = setInterval(syncPlayer, 3000);
     return () => clearInterval(timer);
-  }, [room?.version, room?.status, room?.position, room?.updatedAt, current?.id, playerReady, fullscreenPlayerReady, fullScreen, canControl]);
+  }, [room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id, playerReady, fullscreenPlayerReady, fullScreen, canControl]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
@@ -363,7 +365,7 @@ export default function RoomScreen() {
 
       if (message.type === 'state' && message.state === 0 && isHost && current) {
         // Only the host advances the queue; controller devices must not race to change tracks.
-        if (endedItemRef.current === current.id) return;
+        if (endedItemRef.current === current.id || playerDuration <= 0 || message.position < playerDuration - 2) return;
         endedItemRef.current = current.id;
         const queue = room?.queue ?? [];
         const index = queue.findIndex(item => item.id === current.id);
@@ -627,6 +629,16 @@ export default function RoomScreen() {
               onShouldStartLoadWithRequest={request => !/^(intent:|vnd\.youtube:|youtube:|market:)/i.test(request.url)}
               onMessage={event => void handlePlayerMessage(event, false)}
               onHttpError={() => setError('The YouTube player could not load. Check your connection and try again.')}
+              onRenderProcessGone={() => {
+                setPlayerReady(false);
+                setError('The video renderer stopped unexpectedly. Recovering the player…');
+                playerRef.current?.reload();
+              }}
+              onContentProcessDidTerminate={() => {
+                setPlayerReady(false);
+                setError('The video renderer stopped unexpectedly. Recovering the player…');
+                playerRef.current?.reload();
+              }}
               startInLoadingState
             />
           ) : (
@@ -921,6 +933,16 @@ export default function RoomScreen() {
                 onShouldStartLoadWithRequest={request => !/^(intent:|vnd\.youtube:|youtube:|market:)/i.test(request.url)}
                 onMessage={event => void handlePlayerMessage(event, true)}
                 onHttpError={() => setError('The YouTube player could not load. Check your connection and try again.')}
+                onRenderProcessGone={() => {
+                  setFullscreenPlayerReady(false);
+                  setError('The fullscreen video renderer stopped unexpectedly. Recovering…');
+                  fullscreenPlayerRef.current?.reload();
+                }}
+                onContentProcessDidTerminate={() => {
+                  setFullscreenPlayerReady(false);
+                  setError('The fullscreen video renderer stopped unexpectedly. Recovering…');
+                  fullscreenPlayerRef.current?.reload();
+                }}
                 startInLoadingState
               />
             ) : null}
