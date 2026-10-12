@@ -118,7 +118,14 @@ export async function appendQueueItems(code: string, items: QueueItem[]) {
       if (!byId.has(item.id)) byId.set(item.id, cleanQueueItem(item));
     }
     const queue = Array.from(byId.values()).slice(0, MAX_QUEUE_ITEMS);
-    transaction.update(ref, { queue: cleanQueue(queue), ...touch() });
+    const update: Record<string, unknown> = { queue: cleanQueue(queue), ...touch() };
+    if (!snapshot.data().currentItemId && queue.length) {
+      update.currentItemId = queue[0].id;
+      update.status = 'paused';
+      update.position = 0;
+      update.playbackUpdatedAt = serverTimestamp();
+    }
+    transaction.update(ref, update);
   });
 }
 
