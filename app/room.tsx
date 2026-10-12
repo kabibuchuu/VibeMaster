@@ -357,7 +357,7 @@ export default function RoomScreen() {
     setPlayerReady(false);
     setPlayerError(null);
     setAutoplayBlocked(false);
-  }, [current?.id]);
+  }, [current?.id, room?.playbackEngine]);
 
   useEffect(() => {
     return () => {
@@ -401,14 +401,41 @@ export default function RoomScreen() {
   }
 
   const syncPlayer = () => {
-    const activeRef = playerRef;
-    if (!room || !current || !playerReady) return;
+    if (!room || !current) return;
     const playbackAnchor = room.playbackUpdatedAt ?? room.updatedAt;
-    const elapsed = room.status === 'playing'
-      ? Math.max(0, (Date.now() - playbackAnchor) / 1000)
+    const elapsedMs = room.status === 'playing'
+      ? Math.max(0, Date.now() - playbackAnchor)
       : 0;
-    const target = Math.max(0, room.position + elapsed);
+    const targetMs = Math.max(0, room.position * 1000 + elapsedMs);
+
+    if (room.playbackEngine === 'native') {
+      if (nativeSyncInFlightRef.current || !nativeTrackItemRef.current) return;
+      nativeSyncInFlightRef.current = true;
+      void nativePlayback.getState()
+        .then(async state => {
+          const target = targetMs;
+          const drift = Math.abs(state.positionMs - target);
+          if (drift > DRIFT_TOLERANCE_SECONDS * 1000) {
+            await nativePlayback.seekTo(target);
+          }
+          if (room.status === 'playing' && !state.isPlaying) {
+            await nativePlayback.resume();
+          } else if (room.status !== 'playing' && state.isPlaying) {
+            await nativePlayback.pause();
+          }
+          setNativePlaybackPosition((drift > DRIFT_TOLERANCE_SECONDS * 1000 ? target : state.positionMs) / 1000);
+          setNativePlaybackDuration(state.durationMs / 1000);
+        })
+        .catch(error => {
+          setNativePlaybackStatus(error instanceof Error ? error.message : 'Native player state unavailable.');
+        })
+        .finally(() => { nativeSyncInFlightRef.current = false; });
+      return;
+    }
+
+    if (!playerReady) return;
     const desiredState = room.status === 'playing' ? 1 : 2;
+    const target = targetMs / 1000;
     const script = [
       'if(window.vmPlayer){',
       'var now=Number(window.vmPlayer.getCurrentTime()||0);',
@@ -418,22 +445,22 @@ export default function RoomScreen() {
       'if(state!==' + desiredState + '){' + (desiredState === 1 ? 'window.vmPlayer.playVideo();' : 'window.vmPlayer.pauseVideo();') + '}',
       '}true;',
     ].join('');
-    activeRef.current?.injectJavaScript(script);
+    playerRef.current?.injectJavaScript(script);
   };
 
   useEffect(() => {
-    if (!room || !current || !playerReady) return;
+    if (!room || !current || (room.playbackEngine !== 'native' && !playerReady)) return;
     syncPlayer();
     const timer = setInterval(syncPlayer, 3000);
     return () => clearInterval(timer);
-  }, [room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id, playerReady, fullScreen, canControl]);
+  }, [room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, room?.playbackEngine, current?.id, playerReady, nativePlaybackActive, fullScreen, canControl]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') syncPlayer();
     });
     return () => subscription.remove();
-  }, [fullScreen, playerReady, room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id]);
+  }, [fullScreen, playerReady, room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, room?.playbackEngine, current?.id]);
 
   async function publish(status: Room['status'], position: number) {
     if (!current || !canControl) return;
