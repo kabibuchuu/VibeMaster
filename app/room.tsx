@@ -1042,7 +1042,7 @@ export default function RoomScreen() {
             <Text style={s.leaveText}>Leave room</Text>
           </TouchableOpacity>
         ) : null}
-      </View>lView>
+      </View>
 
       </ScrollView>
 
