@@ -118,7 +118,7 @@ internal object YouTubeStreamResolver {
                 hints = ContentHints().withStreamCapabilities(
                     allowHls = false,
                     allowSabr = false,
-                    allowBoundedRange = true,
+                    allowBoundedRange = false,
                 ),
                 audioQuality = AudioQuality.AUTO,
                 clientPlaybackNonce = generateClientPlaybackNonce(),
