@@ -175,6 +175,7 @@ export default function RoomScreen() {
         uri: stream.url,
         title: current.title,
         artist: current.channelTitle,
+        mimeType: stream.mimeType,
         headers: stream.headers,
       });
       setNativePlaybackActive(true);
