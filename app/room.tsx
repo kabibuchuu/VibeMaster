@@ -240,13 +240,12 @@ export default function RoomScreen() {
     void searchYouTube(query, current.kind === 'music' ? 'music' : 'video')
       .then(items => {
         if (cancelled) return;
-        const queuedIds = new Set(queuedVideoIds.split('|'));
-        setRecommendations(items.filter(item => item.kind !== 'playlist' && item.id !== current.videoId && !queuedIds.has(item.id)).slice(0, 10));
+        setRecommendations(items.filter(item => item.kind !== 'playlist' && item.id !== current.videoId).slice(0, 10));
       })
       .catch(() => { if (!cancelled) setRecommendations([]); })
       .finally(() => { if (!cancelled) setRecommendationsLoading(false); });
     return () => { cancelled = true; };
-  }, [current?.id, current?.title, current?.channelTitle, current?.kind, queuedVideoIds]);
+  }, [current?.id, current?.title, current?.channelTitle, current?.kind]);
 
   useEffect(() => {
     endedItemRef.current = '';
@@ -491,6 +490,28 @@ export default function RoomScreen() {
       setRecommendations(previous => previous.filter(result => result.id !== item.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not add recommendation.');
+    } finally {
+      setAddingRecommendation(null);
+    }
+  }
+
+  async function playRecommendation(item: YouTubeResult) {
+    if (!canControl || addingRecommendation) return;
+    setAddingRecommendation(item.id);
+    try {
+      await addQueueItem(roomCode, {
+        id: item.id,
+        videoId: item.id,
+        title: item.title,
+        channelTitle: item.channelTitle,
+        thumbnail: item.thumbnail,
+        duration: item.duration,
+        kind: item.kind === 'music' ? 'music' : 'video',
+      });
+      await setCurrentItem(roomCode, item.id, 'playing', 0);
+      setRecommendations(previous => previous.filter(result => result.id !== item.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not play recommendation.');
     } finally {
       setAddingRecommendation(null);
     }
@@ -905,11 +926,17 @@ export default function RoomScreen() {
           </View>
           {recommendations.length ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.recommendationList}>
-              {recommendations.map(item => (
+              {recommendations.filter(item => !new Set(queuedVideoIds.split('|')).has(item.id)).map(item => (
                 <View key={item.id} style={s.recommendationCard}>
-                  <Image source={{ uri: item.thumbnail }} style={s.recommendationThumb} />
-                  <Text numberOfLines={2} style={s.recommendationCardTitle}>{item.title}</Text>
-                  <Text numberOfLines={1} style={s.recommendationChannel}>{item.channelTitle}</Text>
+                  <TouchableOpacity activeOpacity={0.82} onPress={() => void playRecommendation(item)} disabled={!canControl || addingRecommendation !== null} accessibilityRole="button" accessibilityLabel={`Play ${item.title}`}>
+                    <View style={s.recommendationImageWrap}>
+                      <Image source={{ uri: item.thumbnail }} style={s.recommendationThumb} />
+                      <View style={s.recommendationPlay}><Text style={s.recommendationPlayText}>{addingRecommendation === item.id ? '…' : '▶'}</Text></View>
+                    </View>
+                    <Text numberOfLines={2} style={s.recommendationCardTitle}>{item.title}</Text>
+                    <Text numberOfLines={1} style={s.recommendationChannel}>{item.channelTitle}</Text>
+                    {canControl ? <Text style={s.recommendationTapHint}>TAP TO PLAY NOW</Text> : null}
+                  </TouchableOpacity>
                   {canControl ? (
                     <TouchableOpacity style={s.recommendationAdd} onPress={() => void addRecommendation(item)} disabled={addingRecommendation !== null}>
                       <Text style={s.recommendationAddText}>{addingRecommendation === item.id ? 'Adding…' : '＋ Add to queue'}</Text>
@@ -1250,7 +1277,11 @@ const s = StyleSheet.create({
   recommendationTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 4 },
   recommendationList: { gap: 12, paddingRight: 16, paddingBottom: 4 },
   recommendationCard: { width: 172, backgroundColor: '#111019', borderRadius: 16, borderWidth: 1, borderColor: '#262231', padding: 9 },
-  recommendationThumb: { width: '100%', height: 94, borderRadius: 10, backgroundColor: '#201d27' },
+  recommendationImageWrap: { position: 'relative' },
+  recommendationThumb: { width: '100%', height: 100, borderRadius: 10, backgroundColor: '#201d27' },
+  recommendationPlay: { position: 'absolute', right: 8, bottom: 8, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(139,92,246,0.95)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  recommendationPlayText: { color: '#fff', fontSize: 14, fontWeight: '900', marginLeft: 2 },
+  recommendationTapHint: { color: '#a78bfa', fontSize: 8, letterSpacing: 1, fontWeight: '900', marginTop: 7 },
   recommendationCardTitle: { color: '#f7f5fb', fontSize: 12, lineHeight: 16, fontWeight: '800', marginTop: 9, minHeight: 32 },
   recommendationChannel: { color: '#8e8999', fontSize: 10, marginTop: 4 },
   recommendationAdd: { backgroundColor: '#2a1c4d', borderRadius: 9, paddingVertical: 9, alignItems: 'center', marginTop: 9 },
