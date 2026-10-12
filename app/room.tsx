@@ -725,6 +725,7 @@ export default function RoomScreen() {
         </View>
       ) : null}
 
+      <ScrollView style={s.roomScroll} contentContainerStyle={s.roomScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       {current ? (
         <View style={s.playerControlPanel}>
           <View style={s.playerIdentityRow}>
@@ -966,7 +967,7 @@ export default function RoomScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={s.queue} keyboardShouldPersistTaps="handled">
+      <View style={s.queue}>
         {room.queue.filter(item => item.id !== current?.id).map((item, index) => (
           <View key={item.id} style={[s.queueItem, item.id === current?.id && s.currentQueueItem]}>
             <TouchableOpacity style={s.queueMain} onPress={() => void selectItem(item)} disabled={!canControl}>
@@ -1002,6 +1003,7 @@ export default function RoomScreen() {
             <Text style={s.leaveText}>Leave room</Text>
           </TouchableOpacity>
         ) : null}
+      </View>lView>
       </ScrollView>
 
       {fullScreen && Boolean(current) ? (
@@ -1179,6 +1181,8 @@ export default function RoomScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#08070d' },
   c: { flex: 1, backgroundColor: '#08070d', paddingHorizontal: 16 },
+  roomScroll: { flex: 1 },
+  roomScrollContent: { paddingBottom: 32 },
   center: { flex: 1, backgroundColor: '#08070d', alignItems: 'center', justifyContent: 'center', padding: 24 },
   big: { color: '#fff', fontSize: 26, fontWeight: '900' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingTop: 3 },
