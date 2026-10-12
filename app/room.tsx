@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -124,6 +125,8 @@ export default function RoomScreen() {
   const [playerDuration, setPlayerDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [progressWidth, setProgressWidth] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [scrubPosition, setScrubPosition] = useState(0);
   const [manageOpen, setManageOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
@@ -283,10 +286,16 @@ export default function RoomScreen() {
     const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
     if (!room || !current || !activeReady) return;
     syncPlayer();
-    if (canControl) return;
-    const timer = setInterval(syncPlayer, 2000);
+    const timer = setInterval(syncPlayer, 3000);
     return () => clearInterval(timer);
   }, [room?.version, room?.status, room?.position, room?.updatedAt, current?.id, playerReady, fullscreenPlayerReady, fullScreen, canControl]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') syncPlayer();
+    });
+    return () => subscription.remove();
+  }, [fullScreen, playerReady, fullscreenPlayerReady, room?.version, room?.status, room?.position, room?.updatedAt, current?.id]);
 
   async function publish(status: Room['status'], position: number) {
     if (!current || !canControl) return;
@@ -384,14 +393,19 @@ export default function RoomScreen() {
     if (!nextMuted && volume === 0) setPlayerVolume(0.8);
   }
 
-  function seekToFraction(fraction: number) {
+  function seekToPosition(position: number) {
     const activeReady = fullScreen ? fullscreenPlayerReady : playerReady;
     if (!activeReady || !playerDuration || !canControl) return;
-    const target = Math.max(0, Math.min(playerDuration, playerDuration * fraction));
+    const target = Math.max(0, Math.min(playerDuration, position));
     const activeRef = fullScreen ? fullscreenPlayerRef : playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.seekTo(' + target + ',true);window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:' + target + '}));}true;'
     );
+  }
+
+  function seekToFraction(fraction: number) {
+    if (!playerDuration) return;
+    seekToPosition(playerDuration * Math.max(0, Math.min(1, fraction)));
   }
 
   function formatTime(seconds: number) {
@@ -464,7 +478,10 @@ export default function RoomScreen() {
       const enabled = !(room?.controllerIds ?? []).includes(userId);
       await setController(roomCode, userId, enabled);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not update room access.');
+      const code = (e as { code?: string })?.code;
+      setError(code === 'permission-denied'
+        ? 'Firebase blocked the access change. Publish the latest firestore.rules in Firebase Console, then try again.'
+        : e instanceof Error ? e.message : 'Could not update room access.');
     }
   }
 
@@ -613,22 +630,27 @@ export default function RoomScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            disabled={!canControl || !playerDuration}
-            onPress={event => {
-              if (!progressWidth) return;
-              seekToFraction(event.nativeEvent.locationX / progressWidth);
-            }}
-            onLayout={event => setProgressWidth(event.nativeEvent.layout.width)}
-            style={s.progressTrack}
-          >
-            <View
-              style={[
-                s.progressFill,
-                { width: progressWidth ? Math.min(1, playerPosition / Math.max(1, playerDuration)) * progressWidth : 0 },
-              ]}
+          <View style={s.scrubWrap}>
+            <Slider
+              value={isSeeking ? scrubPosition : playerPosition}
+              minimumValue={0}
+              maximumValue={Math.max(1, playerDuration)}
+              disabled={!canControl || !playerDuration}
+              minimumTrackTintColor="#a78bfa"
+              maximumTrackTintColor="#302b38"
+              thumbTintColor="#c4b5fd"
+              onSlidingStart={() => {
+                setIsSeeking(true);
+                setScrubPosition(playerPosition);
+              }}
+              onValueChange={value => setScrubPosition(value)}
+              onSlidingComplete={value => {
+                setIsSeeking(false);
+                setScrubPosition(value);
+                seekToPosition(value);
+              }}
             />
-          </TouchableOpacity>
+          </View>
 
           <View style={s.playerTimeRow}>
             <Text style={s.playerTime}>{formatTime(playerPosition)} / {formatTime(playerDuration)}</Text>
@@ -861,17 +883,6 @@ export default function RoomScreen() {
         onRequestClose={() => setFullScreen(false)}
       >
         <View style={s.fullscreenRoot}>
-          <View style={s.fullscreenHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.fullscreenKicker}>{room.mode === 'music' ? 'MUSIC' : 'VIDEO'} · {status}</Text>
-              <Text numberOfLines={1} style={s.fullscreenTitle}>{current?.title}</Text>
-              <Text numberOfLines={1} style={s.fullscreenChannel}>{current?.channelTitle}</Text>
-            </View>
-            <TouchableOpacity style={s.fullscreenClose} onPress={() => setFullScreen(false)}>
-              <Text style={s.fullscreenCloseText}>×</Text>
-            </TouchableOpacity>
-          </View>
-
           <View style={s.fullscreenVideo}>
             {current ? (
               <WebView
@@ -893,7 +904,16 @@ export default function RoomScreen() {
               />
             ) : null}
           </View>
-
+          <View style={s.fullscreenHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.fullscreenKicker}>{room.mode === 'music' ? 'MUSIC' : 'VIDEO'} · {status}</Text>
+              <Text numberOfLines={1} style={s.fullscreenTitle}>{current?.title}</Text>
+              <Text numberOfLines={1} style={s.fullscreenChannel}>{current?.channelTitle}</Text>
+            </View>
+            <TouchableOpacity style={s.fullscreenClose} onPress={() => setFullScreen(false)}>
+              <Text style={s.fullscreenCloseText}>×</Text>
+            </TouchableOpacity>
+          </View>
           <View style={s.fullscreenControls}>
             <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!canControl}>
               <Text style={s.compactControlText}>⏮</Text>
@@ -914,23 +934,31 @@ export default function RoomScreen() {
               <Text style={s.iconButtonText}>⚙</Text>
             </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            disabled={!canControl || !playerDuration}
-            onPress={event => {
-              if (!progressWidth) return;
-              seekToFraction(event.nativeEvent.locationX / progressWidth);
-            }}
-            onLayout={event => setProgressWidth(event.nativeEvent.layout.width)}
-            style={s.fullscreenProgress}
-          >
-            <View style={[s.progressFill, { width: progressWidth ? Math.min(1, playerPosition / Math.max(1, playerDuration)) * progressWidth : 0 }]} />
-          </TouchableOpacity>
+          <View style={s.fullscreenProgress}>
+            <Slider
+              value={isSeeking ? scrubPosition : playerPosition}
+              minimumValue={0}
+              maximumValue={Math.max(1, playerDuration)}
+              disabled={!canControl || !playerDuration}
+              minimumTrackTintColor="#a78bfa"
+              maximumTrackTintColor="#302b38"
+              thumbTintColor="#c4b5fd"
+              onSlidingStart={() => {
+                setIsSeeking(true);
+                setScrubPosition(playerPosition);
+              }}
+              onValueChange={value => setScrubPosition(value)}
+              onSlidingComplete={value => {
+                setIsSeeking(false);
+                setScrubPosition(value);
+                seekToPosition(value);
+              }}
+            />
+          </View>
           <View style={s.fullscreenTimeRow}>
-            <Text style={s.playerTime}>{formatTime(playerPosition)} / {formatTime(playerDuration)}</Text>
+            <Text style={s.playerTime}>{formatTime(isSeeking ? scrubPosition : playerPosition)} / {formatTime(playerDuration)}</Text>
             <Text style={s.playerAccess}>{canControl ? 'ROOM CONTROL' : 'SYNCED'}</Text>
           </View>
-
           {settingsOpen ? (
             <View style={s.fullscreenSettings}>
               <View style={s.settingRow}>
@@ -1085,18 +1113,19 @@ const s = StyleSheet.create({
   settingButtons: { flexDirection: 'row', gap: 8, marginTop: 6 },
   settingButton: { flex: 1, backgroundColor: '#201d27', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 8 },
   settingButtonText: { color: '#cfc2ed', fontSize: 11, fontWeight: '900' },
-  fullscreenRoot: { flex: 1, backgroundColor: '#050509', paddingHorizontal: 18, paddingVertical: 12 },
-  fullscreenHeader: { flexDirection: 'row', alignItems: 'center', paddingBottom: 8 },
+  fullscreenRoot: { flex: 1, backgroundColor: '#050509' },
+  fullscreenHeader: { position: 'absolute', zIndex: 3, top: 12, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 14, backgroundColor: 'rgba(5,5,9,0.62)' },
   fullscreenKicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
   fullscreenTitle: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 2 },
   fullscreenChannel: { color: '#777481', fontSize: 11, marginTop: 2 },
   fullscreenClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
   fullscreenCloseText: { color: '#fff', fontSize: 25, lineHeight: 27 },
-  fullscreenVideo: { flex: 1, backgroundColor: '#000', borderRadius: 16, overflow: 'hidden' },
-  fullscreenControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18, paddingVertical: 9 },
-  fullscreenProgress: { height: 5, borderRadius: 5, backgroundColor: '#302b38', overflow: 'hidden' },
-  fullscreenTimeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  fullscreenSettings: { backgroundColor: '#111019', borderRadius: 14, padding: 12, marginTop: 5 },
+  fullscreenVideo: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#000', overflow: 'hidden' },
+  fullscreenControls: { position: 'absolute', zIndex: 3, bottom: 66, left: 12, right: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 8, backgroundColor: 'rgba(5,5,9,0.56)', borderRadius: 18 },
+  fullscreenProgress: { position: 'absolute', zIndex: 3, left: 18, right: 18, bottom: 48 },
+  fullscreenTimeRow: { position: 'absolute', zIndex: 3, bottom: 12, left: 22, right: 22, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(5,5,9,0.56)' },
+  fullscreenSettings: { position: 'absolute', zIndex: 4, right: 18, bottom: 120, width: 260, backgroundColor: 'rgba(17,16,25,0.96)', borderRadius: 14, padding: 12 },
+  scrubWrap: { marginTop: 7, marginHorizontal: -8, height: 28, justifyContent: 'center' },
   error: { backgroundColor: '#35151c', borderRadius: 14, padding: 12, marginTop: 10 },
   errorTitle: { color: '#fff', fontWeight: '800' },
   errorText: { color: '#c99ca5', fontSize: 12, lineHeight: 18, marginTop: 3 },
