@@ -1,48 +1,52 @@
 # VibeMaster
 
-VibeMaster is a synchronized YouTube listening/watch-party mobile app.
+VibeMaster is being rebuilt as an Android-first, music-focused shared listening app. The target experience is synchronized rooms, track queues and playlists, text chat, and live voice chat.
 
-## Stack
+## Current implementation status
 
-- React Native + Expo + TypeScript
+This branch is an in-progress reconstruction, not a release-ready app.
+
+- Music-only discovery and room-creation UI: implemented in this branch.
+- Room state, queue, participants, and text chat: existing Firebase/Firestore implementation.
+- Actual playback: still uses the YouTube IFrame Player API in a WebView. It is **not yet a native audio-only engine**.
+- Voice chat: **not implemented yet**. The microphone permissions in the Expo config are groundwork only and do not start recording or transmit voice.
+- Native Android playback, background controls, and end-to-end multi-device sync: not complete or validated.
+
+Do not describe this branch as delivering audio-only playback or voice chat until those systems are implemented and tested on real Android devices.
+
+## Stack currently in the repository
+
+- React Native + Expo + TypeScript / Expo Router
 - Firebase Authentication + Cloud Firestore
 - YouTube Data API v3 for discovery
-- YouTube IFrame Player API inside a WebView
-- Expo Router
-- Expo Brightness + Screen Orientation
-- React Native Community Slider
+- YouTube IFrame Player API in `react-native-webview` for current playback
+- Expo Screen Orientation and React Native Community Slider
 
-## Current MVP
+## Target architecture
 
-- Anonymous Firebase authentication with React Native persistence
-- Create or join a room with a short code
-- Music, video, and mixed room modes
-- Real-time synchronized playback
-- Host playback control
-- Host can grant/revoke playback access to individual participants
-- Playback controls: play/pause, previous/next, ±10 seconds, progress seeking
-- Fullscreen landscape player
-- Volume and video brightness controls
-- Queue management
-- Room chat
-- YouTube video and playlist discovery
-- Queue seeded from YouTube videos/playlists
-- YouTube media stays embedded; VibeMaster does not download or extract media
+1. **Android native audio playback:** replace the iframe player with a native Media3/ExoPlayer-backed module. The current iframe is a temporary legacy path, not the target.
+2. **Room synchronization:** keep Firestore as the room/queue coordination layer; synchronize item identity, play/pause state, and a timestamped playback position, with drift correction on each client.
+3. **Voice rooms:** use a real-time audio transport (planned: LiveKit) with a server-issued room token. Never ship an API secret or token-signing secret in the mobile app.
+4. **Native builds:** use an Expo development build / EAS APK for native modules. Expo Go alone cannot load custom native playback or voice SDK modules.
+5. **Licensing review:** Metrolist is GPL-3.0. If its playback implementation is copied or adapted into a distributed VibeMaster build, preserve required notices and meet GPL source-distribution obligations. The current branch has not yet integrated Metrolist playback code.
 
-## Local setup
+## Android build profiles
 
-Always pull the latest app changes before testing:
+The EAS profiles in `eas.json` describe development and preview APK builds and a production Android App Bundle. They do not mean that a build has already been generated or tested.
 
-```bat
-cd /d D:\VibeMaster
-git pull origin main
+Before building a development APK, install/configure EAS CLI and authenticate:
+
+```bash
 npm install
-npx expo start -c
+npx eas-cli login
+npx eas-cli build --platform android --profile development
 ```
 
-For restrictive networks, use LAN when the phone and development PC share the same Wi-Fi. Expo tunnel mode can be unreliable and is not required for the app itself.
+Install the resulting APK on the Android device. A development build is different from Expo Go and is required once native modules are added.
 
-Create `.env.local` from `.env.example`:
+## Local Expo setup (current legacy path)
+
+Create `.env.local` from `.env.example` and set:
 
 ```text
 EXPO_PUBLIC_YOUTUBE_API_KEY=your_key_here
@@ -51,25 +55,11 @@ EXPO_PUBLIC_YOUTUBE_API_KEY=your_key_here
 Do not commit `.env.local`.
 
 Enable in Firebase:
-
 1. Anonymous Authentication
 2. Cloud Firestore
-3. Publish `firestore.rules`
+3. Publish the repository's Firestore rules
 
-## Playback model
-
-The Firestore room document is the shared source of truth for:
-
-- current queue item
-- playing/paused state
-- playback position
-- controller IDs
-
-Controllers can publish playback state. Viewers calculate the expected position from the last persisted position plus elapsed time and periodically correct drift.
-
-The player is embedded with the YouTube IFrame Player API. VibeMaster does not extract, download, or cache YouTube media.
-
-## Firestore model
+## Firestore room model
 
 ```text
 rooms/{roomCode}
@@ -80,6 +70,7 @@ rooms/{roomCode}
   queue[]
   position
   updatedAt
+  playbackUpdatedAt
   version
   controllerIds
   createdAt
@@ -95,21 +86,9 @@ rooms/{roomCode}/messages/{messageId}
   createdAt
 ```
 
-## Room data lifecycle
+## Important limitations
 
-The host's Room controls now include **End room & delete data**. That action deletes the room, its participant documents, and its chat messages.
-
-Existing old rooms from development are still normal Firestore data. They can be removed from the Firebase console. Firebase documents that deleting a document from the console also deletes its nested data.
-
-For larger production-scale retention, a server-side recursive cleanup or scheduled cleanup is preferable to doing broad deletes from a mobile client. Firebase documents callable/server-side recursive deletion for this use case.
-
-## YouTube player limitation
-
-VibeMaster supplies the app-level title, queue, controls, volume, brightness, fullscreen, and access UI.
-
-The actual media remains a YouTube embedded player. YouTube's current embedded-player documentation says the player can keep displaying YouTube attribution/title/avatar elements in states such as paused/ended, and the old `modestbranding` option is deprecated and has no effect.
-
-## Notes
-
-- No Android Studio is required for the Expo Go development workflow.
-- For production, use app-restricted YouTube API keys and complete Firebase/YouTube policy review.
+- YouTube API search requires a configured API key and is subject to quota.
+- Embedded playback availability and policy constraints are controlled by YouTube.
+- Firebase configuration/authentication must be validated in the target environment.
+- The new microphone-related Android permissions are preparatory configuration only; they do not constitute voice chat.
