@@ -27,7 +27,7 @@ Do not describe this branch as delivering audio-only playback or voice chat unti
 1. **Android native audio playback:** replace the iframe player with a native Media3/ExoPlayer-backed module. The current iframe is a temporary legacy path, not the target.
 2. **Room synchronization:** keep Firestore as the room/queue coordination layer; synchronize item identity, play/pause state, and a timestamped playback position, with drift correction on each client.
 3. **Voice rooms:** use a real-time audio transport (planned: LiveKit) with a server-issued room token. Never ship an API secret or token-signing secret in the mobile app.
-4. **Native builds:** use an Expo development build / EAS APK for native modules. Expo Go alone cannot load LiveKit's native WebRTC modules. Expo Audio background-playback config is enabled, but the current room player still uses the legacy YouTube iframe and has not been replaced by a native audio-only source.
+4. **Native builds:** use an Expo development build / EAS APK for native modules. Expo Go alone cannot load LiveKit's native WebRTC modules. The room player uses the official YouTube IFrame player in the foreground. YouTube policy does not permit using the API to create a background player; VibeMaster therefore does not claim YouTube background or lock-screen playback.
 5. **Licensing review:** Metrolist is GPL-3.0. If its playback implementation is copied or adapted into a distributed VibeMaster build, preserve required notices and meet GPL source-distribution obligations. The current branch has not yet integrated Metrolist playback code.
 
 ## Android build profiles
@@ -90,7 +90,7 @@ rooms/{roomCode}/messages/{messageId}
 
 The room header now links to the voice screen. Voice tokens are issued by a Firebase callable function; the API secret is not embedded in the app.
 
-1. Install root dependencies with the Expo-compatible installer: `npx expo install expo-audio`, then install LiveKit's Expo packages using the official LiveKit Expo instructions.
+1. Install root dependencies with `npm install`, then install LiveKit's Expo packages using the official LiveKit Expo instructions.
 2. Install Functions dependencies: `cd functions && npm install && npm run build`.
 3. Configure Firebase Functions secrets and parameter:
    ```sh
@@ -106,7 +106,8 @@ The callable only mints a token for an authenticated user who already has a part
 ## Important limitations
 
 - YouTube API search requires a configured API key and is subject to quota.
-- Embedded playback availability and policy constraints are controlled by YouTube.
+- YouTube Music handoff is available from search results and the room player. See `docs/youtube-music-integration.md` for the official API policy review and the limits on background audio, stream extraction, and synchronized playback in the external app.
+- The official YouTube API does not provide an ordinary third-party audio-only stream endpoint. If native background playback is a hard requirement, obtain explicit written authorization for a YouTube integration or use a separately licensed audio provider.
 - Firebase configuration/authentication must be validated in the target environment.
 - Voice chat requires a LiveKit project and deployment of the Firebase callable. It has not been built or verified on physical devices in this change.
-- The app's music catalogue currently returns YouTube video IDs, not authorized direct audio URLs. Expo Audio cannot play a YouTube video ID as an audio stream. Replacing the iframe with native audio requires a licensed/authorized playable source; this branch does not yet complete that source integration.
+- The app's catalogue returns YouTube video IDs, not direct audio URLs. VibeMaster cannot control playback once a user hands a track to the external YouTube Music app, so cross-device synchronization of that external playback is not implemented.
