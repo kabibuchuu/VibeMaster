@@ -57,6 +57,7 @@ export async function createRoom(code: string, hostId: string, mode: RoomMode = 
       currentItemId: '',
       queue: [],
       position: 0,
+      playbackUpdatedAt: serverTimestamp(),
       ...touch(),
       createdAt: serverTimestamp(),
     });
@@ -67,7 +68,14 @@ export async function updateRoom(code: string, data: Partial<Room>) {
   const cleaned = Object.fromEntries(
     Object.entries(data).filter(([, value]) => value !== undefined),
   ) as Partial<Room>;
-  await updateDoc(roomRef(code), { ...cleaned, ...touch() });
+  const isPlaybackUpdate = ['status', 'position', 'currentItemId'].some(key =>
+    Object.prototype.hasOwnProperty.call(cleaned, key),
+  );
+  await updateDoc(roomRef(code), {
+    ...cleaned,
+    ...(isPlaybackUpdate ? { playbackUpdatedAt: serverTimestamp() } : {}),
+    ...touch(),
+  });
 }
 
 export async function setController(code: string, userId: string, enabled: boolean) {
@@ -209,17 +217,19 @@ export async function sendMessage(code: string, message: Omit<RoomMessage, 'id' 
 }
 
 function normalizeRoom(code: string, data: Record<string, unknown>): Room {
-  const value = data.updatedAt;
-  const updatedAt = typeof value === 'number'
+  const toMillis = (value: unknown) => typeof value === 'number'
     ? value
     : value && typeof (value as { toMillis?: unknown }).toMillis === 'function'
       ? (value as { toMillis: () => number }).toMillis()
       : Date.now();
+  const updatedAt = toMillis(data.updatedAt);
+  const playbackUpdatedAt = toMillis(data.playbackUpdatedAt ?? data.updatedAt);
 
   return {
     ...(data as Omit<Room, 'code' | 'updatedAt'>),
     code,
     updatedAt,
+    playbackUpdatedAt,
     queue: Array.isArray(data.queue) ? (data.queue as QueueItem[]).slice(0, MAX_QUEUE_ITEMS) : [],
     currentItemId: typeof data.currentItemId === 'string' ? data.currentItemId : '',
     position: typeof data.position === 'number' ? Math.max(0, data.position) : 0,
