@@ -32,6 +32,12 @@ jobs:
         run: npm install
       - name: Generate Android project
         run: npx expo prebuild --platform android --clean
+      - name: Print generated Gradle configuration
+        run: |
+          echo '--- android/settings.gradle ---'
+          cat android/settings.gradle
+          echo '--- android/build.gradle ---'
+          cat android/build.gradle
       - name: Assemble debug APK
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug
