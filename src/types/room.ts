@@ -1,4 +1,4 @@
-export type RoomMode = 'music' | 'video' | 'mixed';
+export type RoomMode = 'music';
 
 export type QueueItem = {
   id: string;
@@ -7,7 +7,7 @@ export type QueueItem = {
   channelTitle: string;
   thumbnail: string;
   duration?: string;
-  kind: 'music' | 'video';
+  kind: 'music';
 };
 
 export type Room = {
