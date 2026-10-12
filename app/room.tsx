@@ -35,6 +35,7 @@ import {
   sendMessage,
   setCurrentItem,
   updatePlayback,
+  updateRoom,
   watchMessages,
   watchParticipants,
   watchRoom,
@@ -150,6 +151,13 @@ export default function RoomScreen() {
   const me = people.find(person => person.id === auth.currentUser?.uid);
   const joined = Boolean(me);
   const current = room?.queue?.find(item => item.id === room.currentItemId) ?? room?.queue?.[0];
+  const currentItemRef = useRef(current);
+  currentItemRef.current = current;
+  const nativeTrackItemRef = useRef('');
+  const nativeFailedItemRef = useRef('');
+  const nativeSyncInFlightRef = useRef(false);
+  const displayedPosition = room?.playbackEngine === 'native' ? nativePlaybackPosition : playerPosition;
+  const displayedDuration = room?.playbackEngine === 'native' ? nativePlaybackDuration : playerDuration;
   const queuedVideoIds = (room?.queue ?? []).map(item => item.videoId || item.id).join('|');
 
   useEffect(() => {
@@ -159,71 +167,107 @@ export default function RoomScreen() {
       }
       if (typeof event.positionMs === 'number') setNativePlaybackPosition(event.positionMs / 1000);
       if (typeof event.durationMs === 'number') setNativePlaybackDuration(event.durationMs / 1000);
+
+      if (event.playbackState === 4 && canControl && isHost && current) {
+        if (endedItemRef.current === current.id) return;
+        endedItemRef.current = current.id;
+        const queue = room?.queue ?? [];
+        const index = queue.findIndex(item => item.id === current.id);
+        const next = index >= 0 ? queue[index + 1] : undefined;
+        if (next) {
+          void setCurrentItem(roomCode, next.id, 'playing', 0).catch(e =>
+            setError(e instanceof Error ? e.message : 'Could not advance the native room queue.'),
+          );
+        } else {
+          void publish('paused', (event.positionMs ?? 0) / 1000);
+        }
+      }
     });
     return () => subscription.remove();
-  }, []);
+  }, [canControl, current?.id, isHost, room?.queue, roomCode]);
 
-  async function playCurrentNatively() {
-    if (!current || nativePlaybackBusy) return;
+  async function playCurrentNatively(publishRoomEngine = true) {
+    const selected = current;
+    if (!selected || nativePlaybackBusy || (publishRoomEngine && !canControl)) return;
     setNativePlaybackBusy(true);
     setNativePlaybackStatus('Resolving audio stream…');
     try {
-      const stream = await nativePlayback.resolveTrack(current.videoId);
-      // Pause the visible WebView source before starting native audio to prevent overlap.
+      const stream = await nativePlayback.resolveTrack(selected.videoId);
+      if (currentItemRef.current?.id !== selected.id) {
+        setNativePlaybackStatus('Room track changed during stream resolution. Retrying the current track.');
+        return;
+      }
+
+      // Pause the embedded player before switching this device to native audio.
       playerRef.current?.injectJavaScript('try{if(window.vmPlayer){window.vmPlayer.pauseVideo();}}catch(e){};true;');
       await nativePlayback.play({
         uri: stream.url,
-        title: current.title,
-        artist: current.channelTitle,
+        title: selected.title,
+        artist: selected.channelTitle,
         mimeType: stream.mimeType,
         headers: stream.headers,
       });
+      nativeTrackItemRef.current = selected.id;
+      nativeFailedItemRef.current = '';
       setNativePlaybackActive(true);
       setNativePlaybackStatus('Native audio playing');
       const state = await nativePlayback.getState();
       setNativePlaybackPosition(state.positionMs / 1000);
       setNativePlaybackDuration(state.durationMs / 1000);
+
+      // The host/controller changes the shared engine only after this device
+      // successfully resolves and starts the track. Other members then resolve
+      // the same stable video ID locally; short-lived URLs never enter Firestore.
+      if (publishRoomEngine) {
+        await updateRoom(roomCode, { playbackEngine: 'native' });
+      }
     } catch (e) {
+      nativeFailedItemRef.current = selected.id;
+      nativeTrackItemRef.current = '';
+      setNativePlaybackActive(false);
       setNativePlaybackStatus(e instanceof Error ? e.message : 'Native playback could not start.');
-      Alert.alert(
-        'Native playback failed',
-        e instanceof Error ? e.message : 'No playable audio stream was returned. Try another track.',
-      );
+      if (publishRoomEngine) {
+        Alert.alert(
+          'Native playback failed',
+          e instanceof Error ? e.message : 'No playable audio stream was returned. Try another track.',
+        );
+      } else {
+        setError(e instanceof Error ? e.message : 'A participant could not resolve this track for native playback.');
+      }
     } finally {
       setNativePlaybackBusy(false);
     }
   }
 
-  async function toggleNativePlayback() {
+  async function switchRoomToEmbeddedPlayer() {
+    if (!canControl) return;
     try {
-      const state = await nativePlayback.getState();
-      if (state.isPlaying) {
-        await nativePlayback.pause();
-        setNativePlaybackStatus('Native player paused');
-      } else {
-        await nativePlayback.resume();
-        setNativePlaybackStatus('Native player playing');
-      }
+      await updateRoom(roomCode, { playbackEngine: 'iframe' });
     } catch (e) {
-      setNativePlaybackStatus(e instanceof Error ? e.message : 'Native player is unavailable.');
+      setError(e instanceof Error ? e.message : 'Could not switch the room back to the embedded player.');
     }
   }
 
   useEffect(() => {
-    if (!roomCode) {
-      setRoomLoaded(true);
+    if (room?.playbackEngine === 'native') {
+      if (
+        current &&
+        nativeTrackItemRef.current !== current.id &&
+        nativeFailedItemRef.current !== current.id &&
+        !nativePlaybackBusy
+      ) {
+        void playCurrentNatively(false);
+      }
       return;
     }
-    return watchRoom(
-      roomCode,
-      value => {
-        setRoom(value);
-        setRoomLoaded(true);
-        if (!value) setError('Room not found. Check the code and try again.');
-      },
-      e => setError(e.message),
-    );
-  }, [roomCode]);
+
+    if (nativePlaybackActive) {
+      nativeTrackItemRef.current = '';
+      void nativePlayback.pause().catch(() => {});
+      setNativePlaybackActive(false);
+      setNativePlaybackStatus('Using embedded player');
+    }
+  }, [room?.playbackEngine, current?.id, nativePlaybackActive, nativePlaybackBusy]);
 
   useEffect(() => {
     if (!roomCode) return;
