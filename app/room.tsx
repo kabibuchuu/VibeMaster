@@ -124,7 +124,6 @@ export default function RoomScreen() {
   const [playerPosition, setPlayerPosition] = useState(0);
   const [playerDuration, setPlayerDuration] = useState(0);
   const [muted, setMuted] = useState(false);
-  const [progressWidth, setProgressWidth] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
   const [scrubPosition, setScrubPosition] = useState(0);
   const [manageOpen, setManageOpen] = useState(false);
