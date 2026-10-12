@@ -25,7 +25,7 @@ export type NativePlaybackState = {
   artist: string;
   playbackState?: number;
 };
-export type NativePlaybackEvent = Partial<NativePlaybackState>;
+export type NativePlaybackEvent = Partial<NativePlaybackState> & { title?: string; artist?: string };
 
 type VibeMasterPlayerNativeModule = {
   resolveTrack(videoId: string): Promise<ResolvedNativeTrack>;
