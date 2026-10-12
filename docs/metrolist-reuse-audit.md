@@ -48,7 +48,7 @@ A first native playback foundation has now been added on `feat/music-first-recon
 - `plugins/with-vibemaster-playback.js` registers the Android media playback service and required foreground-service permissions.
 - `src/lib/nativePlayback.ts` defines the typed JS boundary for track URIs, queue operations, playback controls, and state reads.
 
-**This is scaffolding, not a verified end-to-end player.** The YouTube Music/InnerTube catalog and stream-resolution adapter has not yet been integrated, the room screen still uses the WebView player, and a native Android build/device test has not yet passed. The next implementation step is to connect a Metrolist-compatible source adapter to the native player, then replace the room's WebView only after the complete queue/room flow is smoke-tested. Keep the PR draft until the acceptance gates above pass.
+**Current status: experimental adapter connected, not build-verified.** A thin `YouTubeStreamResolver` now constructs the InnerTubeX extractor and returns a temporary audio URL plus required HTTP headers. The native `VibeMasterPlayerModule` exposes `resolveTrack`, passes per-stream headers to Media3, and `app/room.tsx` has an in-room `NAT ▶` test action that pauses the WebView before attempting native playback. It deliberately does not mint PoTokens or provide account cookies, so some tracks may fail. The room's normal controls/synchronization still target the WebView player. CI has passed the TypeScript/Expo checks; a native Android Gradle build and physical-device playback test still have not passed. Keep the PR draft until those gates pass.
 
 ## BitChord comparative audit (2026-10-12)
 
@@ -62,3 +62,14 @@ User-provided fork: https://github.com/kabibuchuu/BitChord (GPL-3.0). Upstream r
 Useful architecture to adapt independently: keep the provider resolver behind a VibeMaster-native interface; keep the player in a MediaSessionService; implement room state around monotonic sequence/revision, server timestamp/clock offset, and drift thresholds; ensure inbound player corrections are not re-published as user commands. Existing Firebase room coordination will need an adapter rather than transplanting BitChord's WebSocket party service.
 
 License: the fork reports GPL-3.0. Any copied or adapted code requires the applicable notices, modification markings and corresponding-source compliance. The source-provider terms and rights are a separate question from GPL. The current audit does not copy the large resolver/service/PoToken machinery wholesale.
+
+
+## InnerTubeX adapter milestone
+
+The local Expo module now has a minimal `YouTubeStreamResolver`, using the published `com.github.MetrolistGroup.innertubex:innertubex:v0.7.0` library identified in BitChord's build files. It creates an OkHttp/Ktor client, a local SharedPreferences-backed player-config repository, `RemotePlayerConfigStore`, `YouTubeCipherService`, `YtConfigParserImpl`, and `InnerTubeExtractor`. It requests non-SABR audio and returns stream URL, MIME type, bitrate, client profile and HTTP headers. The Media3 module now builds a per-stream data source with those headers instead of assuming the audio URL can be fetched without request context.
+
+Limitations of this first pass:
+- The resolver does not yet include BitChord/Metrolist's WebView BotGuard/PoToken provider, cookie/session integration, warm-up, client failure cache or NewPipe fallback. Expect gaps and source changes to break it.
+- The current UI only exposes a deliberate per-track native test; room play/pause/seek and drift correction still follow the WebView. Native room integration is not complete.
+- Native Gradle build and Android-device playback have not been verified. JavaScript CI/Expo Doctor success does not compile Kotlin or fetch the native dependency.
+- Do not persist a resolved audio URL to Firestore; treat it as short-lived.
