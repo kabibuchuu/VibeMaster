@@ -40,6 +40,7 @@ import {
   watchRoom,
 } from '../src/lib/roomRepository';
 import { getPlaylistItems, searchYouTube, type YouTubeResult } from '../src/lib/youtube';
+import { openInYouTubeMusic } from '../src/lib/youtubeMusic';
 import type { Participant, QueueItem, Room, RoomMessage } from '../src/types/room';
 
 type PlayerMessage =
@@ -742,6 +743,16 @@ export default function RoomScreen() {
               <Text numberOfLines={1} style={s.playerTitle}>{current.title}</Text>
               <Text numberOfLines={1} style={s.playerChannel}>{current.channelTitle}</Text>
             </View>
+            <TouchableOpacity
+              style={[s.iconButton, { width: 76 }]}
+              onPress={() => void openInYouTubeMusic({ kind: 'music', id: current.videoId }).catch(() =>
+                Alert.alert('Could not open YouTube Music', 'Open YouTube Music on your device and try again.')
+              )}
+              accessibilityRole="button"
+              accessibilityLabel="Open current track in YouTube Music"
+            >
+              <Text style={[s.iconButtonText, { fontSize: 10 }]}>YTM ↗</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={s.iconButton} onPress={() => setSettingsOpen(value => !value)}>
               <Text style={s.iconButtonText}>⚙</Text>
             </TouchableOpacity>
