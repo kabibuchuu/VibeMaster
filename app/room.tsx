@@ -17,7 +17,6 @@ import {
   View,
   StatusBar,
 } from 'react-native';
-import * as Brightness from 'expo-brightness';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -106,7 +105,7 @@ export default function RoomScreen() {
     title?: string;
     channel?: string;
     thumbnail?: string;
-    kind?: 'music' | 'video';
+    kind?: 'music';
     duration?: string;
   }>();
 
@@ -137,9 +136,7 @@ export default function RoomScreen() {
   const [addingRecommendation, setAddingRecommendation] = useState<string | null>(null);
   const endedItemRef = useRef('');
   const [volume, setVolume] = useState(1);
-  const [brightness, setBrightness] = useState(0.7);
   const playerRef = useRef<WebView>(null);
-  const originalBrightnessRef = useRef<number | null>(null);
   const addedRef = useRef('');
   const isHost = room?.hostId === auth.currentUser?.uid;
   const canControl = Boolean(isHost || (auth.currentUser?.uid && room?.controllerIds?.includes(auth.currentUser.uid)));
@@ -204,17 +201,17 @@ export default function RoomScreen() {
       const item: QueueItem = {
         id: String(videoId),
         videoId: String(videoId),
-        title: String(title ?? 'Selected video'),
+        title: String(title ?? 'Selected track'),
         channelTitle: String(channel ?? 'YouTube'),
         thumbnail: String(thumbnail ?? ''),
         duration: duration ? String(duration) : undefined,
-        kind: kind === 'music' ? 'music' : 'video',
+        kind: 'music',
       };
       void addQueueItem(roomCode, item)
         .then(() => {
           if (!room.currentItemId) return setCurrentItem(roomCode, item.id);
         })
-        .catch(e => setError(e instanceof Error ? e.message : 'Could not add video.'));
+        .catch(e => setError(e instanceof Error ? e.message : 'Could not add track.'));
     }
   }, [
     room,
@@ -237,7 +234,7 @@ export default function RoomScreen() {
     let cancelled = false;
     setRecommendationsLoading(true);
     const query = [current.title, current.channelTitle].filter(Boolean).join(' ');
-    void searchYouTube(query, current.kind === 'music' ? 'music' : 'video')
+    void searchYouTube(query)
       .then(items => {
         if (cancelled) return;
         setRecommendations(items.filter(item => item.kind !== 'playlist' && item.id !== current.videoId).slice(0, 10));
@@ -255,20 +252,9 @@ export default function RoomScreen() {
   }, [current?.id]);
 
   useEffect(() => {
-    let mounted = true;
-    void Brightness.getBrightnessAsync().then(value => {
-      if (mounted) {
-        originalBrightnessRef.current = value;
-        setBrightness(value);
-      }
-    }).catch(() => {});
     return () => {
-      mounted = false;
       StatusBar.setHidden(false, 'none');
       void ScreenOrientation.unlockAsync().catch(() => {});
-      if (originalBrightnessRef.current != null) {
-        void Brightness.setBrightnessAsync(originalBrightnessRef.current).catch(() => {});
-      }
     };
   }, []);
 
@@ -428,12 +414,6 @@ export default function RoomScreen() {
     if (next > 0) command('unMute();');
   }
 
-  function setScreenBrightness(value: number) {
-    const next = Math.max(0.05, Math.min(1, value));
-    setBrightness(next);
-    void Brightness.setBrightnessAsync(next).catch(() => {});
-  }
-
   function toggleMute() {
     const nextMuted = !muted;
     setMuted(nextMuted);
@@ -485,7 +465,7 @@ export default function RoomScreen() {
         channelTitle: item.channelTitle,
         thumbnail: item.thumbnail,
         duration: item.duration,
-        kind: item.kind === 'music' ? 'music' : 'video',
+        kind: 'music',
       });
       setRecommendations(previous => previous.filter(result => result.id !== item.id));
     } catch (e) {
@@ -582,7 +562,7 @@ export default function RoomScreen() {
         channelTitle: fallback.channelTitle,
         thumbnail: fallback.thumbnail,
         duration: fallback.duration,
-        kind: fallback.kind === 'music' ? 'music' : 'video',
+        kind: 'music',
       });
       await setCurrentItem(roomCode, fallback.id, 'playing', 0);
       setRecommendations(previous => previous.filter(item => item.id !== fallback.id));
@@ -691,7 +671,7 @@ export default function RoomScreen() {
   }
 
   const status = room.status === 'playing' ? 'LIVE' : 'PAUSED';
-  const playerErrorText = playerError ? PLAYER_ERROR_TEXT[playerError] ?? 'YouTube could not play this video.' : '';
+  const playerErrorText = playerError ? PLAYER_ERROR_TEXT[playerError] ?? 'YouTube could not play this track.' : '';
 
   return (
     <SafeAreaView style={s.safe} edges={fullScreen ? [] : ['top', 'bottom']}>
@@ -749,7 +729,7 @@ export default function RoomScreen() {
         <View style={s.playerControlPanel}>
           <View style={s.playerIdentityRow}>
             <View style={{ flex: 1 }}>
-              <Text style={s.playerEyebrow}>{room.mode === 'music' ? 'MUSIC' : 'VIDEO'} · {status}</Text>
+              <Text style={s.playerEyebrow}>MUSIC · {status}</Text>
               <Text numberOfLines={1} style={s.playerTitle}>{current.title}</Text>
               <Text numberOfLines={1} style={s.playerChannel}>{current.channelTitle}</Text>
             </View>
@@ -827,23 +807,6 @@ export default function RoomScreen() {
                 thumbTintColor="#a78bfa"
                 onValueChange={setPlayerVolume}
               />
-              {current.kind === 'video' ? (
-                <>
-                  <View style={s.settingRow}>
-                    <Text style={s.settingLabel}>Brightness</Text>
-                    <Text style={s.settingValue}>{Math.round(brightness * 100)}%</Text>
-                  </View>
-                  <Slider
-                    value={brightness}
-                    minimumValue={0.05}
-                    maximumValue={1}
-                    minimumTrackTintColor="#a78bfa"
-                    maximumTrackTintColor="#3a3544"
-                    thumbTintColor="#a78bfa"
-                    onValueChange={setScreenBrightness}
-                  />
-                </>
-              ) : null}
               <View style={s.settingButtons}>
                 <TouchableOpacity style={s.settingButton} onPress={toggleMute}>
                   <Text style={s.settingButtonText}>{muted ? 'Unmute' : 'Mute'}</Text>
@@ -1031,7 +994,7 @@ export default function RoomScreen() {
           </View>
         ))}
         {!room.queue.length ? (
-          <Text style={s.empty}>Add a song or video to build the queue.</Text>
+          <Text style={s.empty}>Add a song or playlist to build the queue.</Text>
         ) : null}
 
         {!isHost && joined ? (
@@ -1112,15 +1075,6 @@ export default function RoomScreen() {
                   <Text style={s.settingValue}>{Math.round(volume * 100)}%</Text>
                 </View>
                 <Slider value={volume} minimumValue={0} maximumValue={1} minimumTrackTintColor="#a78bfa" maximumTrackTintColor="#3a3544" thumbTintColor="#a78bfa" onValueChange={setPlayerVolume} />
-                {current?.kind === 'video' ? (
-                  <>
-                    <View style={s.settingRow}>
-                      <Text style={s.settingLabel}>Brightness</Text>
-                      <Text style={s.settingValue}>{Math.round(brightness * 100)}%</Text>
-                    </View>
-                    <Slider value={brightness} minimumValue={0.05} maximumValue={1} minimumTrackTintColor="#a78bfa" maximumTrackTintColor="#3a3544" thumbTintColor="#a78bfa" onValueChange={setScreenBrightness} />
-                  </>
-                ) : null}
                 <TouchableOpacity style={s.settingButton} onPress={toggleMute}>
                   <Text style={s.settingButtonText}>{muted ? 'Unmute' : 'Mute'}</Text>
                 </TouchableOpacity>
