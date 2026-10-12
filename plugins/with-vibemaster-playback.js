@@ -1,6 +1,23 @@
-const { withAndroidManifest } = require('@expo/config-plugins');
+const { withAndroidManifest, withSettingsGradle } = require('@expo/config-plugins');
 
-module.exports = function withVibeMasterPlayback(config) {
+function withJitPackRepository(config) {
+  return withSettingsGradle(config, (modConfig) => {
+    const source = modConfig.modResults.contents;
+    if (source.includes('https://jitpack.io')) return modConfig;
+
+    const anchor = /(dependencyResolutionManagement\\s*\\{\\s*repositories\\s*\\{)/;
+    if (!anchor.test(source)) {
+      throw new Error('VibeMaster player: could not find dependencyResolutionManagement.repositories in settings.gradle');
+    }
+    modConfig.modResults.contents = source.replace(
+      anchor,
+      "$1\\n        maven { url 'https://jitpack.io' }",
+    );
+    return modConfig;
+  });
+}
+
+function withPlaybackService(config) {
   return withAndroidManifest(config, (modConfig) => {
     const manifest = modConfig.modResults.manifest;
     const app = manifest.application?.[0];
@@ -27,4 +44,10 @@ module.exports = function withVibeMasterPlayback(config) {
     }
     return modConfig;
   });
+}
+
+module.exports = function withVibeMasterPlayback(config) {
+  config = withJitPackRepository(config);
+  config = withPlaybackService(config);
+  return config;
 };
