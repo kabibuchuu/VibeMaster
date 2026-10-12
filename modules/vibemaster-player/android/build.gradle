@@ -10,6 +10,8 @@ android {
   namespace 'com.vibemaster.player'
   defaultConfig {
     minSdkVersion 26
+    versionCode 1
+    versionName '1.0.0'
   }
 }
 
