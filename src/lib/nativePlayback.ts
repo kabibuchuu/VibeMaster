@@ -1,6 +1,21 @@
 import { requireNativeModule } from 'expo-modules-core';
 
-export type NativeQueueTrack = { uri: string; title: string; artist: string };
+export type NativeQueueTrack = {
+  uri: string;
+  title: string;
+  artist: string;
+  headers?: Record<string, string>;
+};
+
+export type ResolvedNativeTrack = {
+  videoId: string;
+  url: string;
+  mimeType: string;
+  bitrate: number;
+  clientName: string;
+  headers: Record<string, string>;
+};
+
 export type NativePlaybackState = {
   isPlaying: boolean;
   positionMs: number;
@@ -8,11 +23,13 @@ export type NativePlaybackState = {
   currentIndex: number;
   title: string;
   artist: string;
+  playbackState?: number;
 };
-export type NativePlaybackEvent = Partial<NativePlaybackState> & { playbackState?: number };
+export type NativePlaybackEvent = Partial<NativePlaybackState>;
 
 type VibeMasterPlayerNativeModule = {
-  play(uri: string, title: string, artist: string): Promise<boolean>;
+  resolveTrack(videoId: string): Promise<ResolvedNativeTrack>;
+  play(uri: string, title: string, artist: string, headers?: Record<string, string>): Promise<boolean>;
   setQueue(tracks: NativeQueueTrack[], startIndex: number): Promise<boolean>;
   pause(): Promise<boolean>;
   stop(): Promise<boolean>;
@@ -24,20 +41,32 @@ type VibeMasterPlayerNativeModule = {
   addListener(eventName: string, listener: (event: NativePlaybackEvent) => void): { remove(): void };
 };
 
-const nativeModule = requireNativeModule<VibeMasterPlayerNativeModule>('VibeMasterPlayer');
+let cachedModule: VibeMasterPlayerNativeModule | null = null;
 
+function getNativeModule() {
+  if (!cachedModule) {
+    cachedModule = requireNativeModule<VibeMasterPlayerNativeModule>('VibeMasterPlayer');
+  }
+  return cachedModule;
+}
+
+/**
+ * Native Media3 controls and the InnerTubeX source adapter.
+ * Resolved URLs expire and should be resolved just before playback; never store
+ * them in Firestore or treat them as stable track identifiers.
+ */
 export const nativePlayback = {
-  play: (track: NativeQueueTrack) => nativeModule.play(track.uri, track.title, track.artist),
-  setQueue: (tracks: NativeQueueTrack[], startIndex = 0) => nativeModule.setQueue(tracks, startIndex),
-  pause: () => nativeModule.pause(),
-  stop: () => nativeModule.stop(),
-  resume: () => nativeModule.resume(),
-  seekTo: (positionMs: number) => nativeModule.seekTo(positionMs),
-  skipNext: () => nativeModule.skipNext(),
-  skipPrevious: () => nativeModule.skipPrevious(),
-  getState: () => nativeModule.getState(),
+  resolveTrack: (videoId: string) => getNativeModule().resolveTrack(videoId),
+  play: (track: NativeQueueTrack) =>
+    getNativeModule().play(track.uri, track.title, track.artist, track.headers ?? {}),
+  setQueue: (tracks: NativeQueueTrack[], startIndex = 0) => getNativeModule().setQueue(tracks, startIndex),
+  pause: () => getNativeModule().pause(),
+  stop: () => getNativeModule().stop(),
+  resume: () => getNativeModule().resume(),
+  seekTo: (positionMs: number) => getNativeModule().seekTo(positionMs),
+  skipNext: () => getNativeModule().skipNext(),
+  skipPrevious: () => getNativeModule().skipPrevious(),
+  getState: () => getNativeModule().getState(),
   addPlaybackListener: (listener: (event: NativePlaybackEvent) => void) =>
-    nativeModule.addListener('playbackStateChanged', listener),
+    getNativeModule().addListener('playbackStateChanged', listener),
 };
-
-/** Native Media3 controls; playable URIs must be supplied by a provider adapter. */
