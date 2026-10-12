@@ -598,7 +598,7 @@ export default function RoomScreen() {
   const playerErrorText = playerError ? PLAYER_ERROR_TEXT[playerError] ?? 'YouTube could not play this video.' : '';
 
   return (
-    <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={s.safe} edges={fullScreen ? [] : ['top', 'bottom']}>
       <KeyboardAvoidingView style={[s.c, fullScreen && { paddingHorizontal: 0 }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
@@ -1132,7 +1132,7 @@ const s = StyleSheet.create({
   settingButton: { flex: 1, backgroundColor: '#201d27', borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 8 },
   settingButtonText: { color: '#cfc2ed', fontSize: 11, fontWeight: '900' },
   fullscreenRoot: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'transparent', zIndex: 25, elevation: 25 },
-  fullscreenTapArea: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 21, elevation: 21 },
+  fullscreenTapArea: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 1, elevation: 1 },
   fullscreenHeader: { position: 'absolute', zIndex: 30, elevation: 30, top: 12, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 14, backgroundColor: 'rgba(5,5,9,0.62)' },
   fullscreenKicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
   fullscreenTitle: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 2 },
