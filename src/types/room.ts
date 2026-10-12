@@ -15,6 +15,8 @@ export type Room = {
   hostId: string;
   mode: RoomMode;
   status: 'waiting' | 'playing' | 'paused';
+  /** Room-wide playback engine selected by the host/controller. */
+  playbackEngine?: 'iframe' | 'native';
   currentItemId: string;
   queue: QueueItem[];
   position: number;
