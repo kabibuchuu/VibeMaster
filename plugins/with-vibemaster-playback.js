@@ -5,14 +5,38 @@ function withJitPackRepository(config) {
     const source = modConfig.modResults.contents;
     if (source.includes('https://jitpack.io')) return modConfig;
 
-    const anchor = /(dependencyResolutionManagement\\s*\\{\\s*repositories\\s*\\{)/;
-    if (!anchor.test(source)) {
-      throw new Error('VibeMaster player: could not find dependencyResolutionManagement.repositories in settings.gradle');
+    // Expo's settings.gradle layout changes across SDK releases. Prefer the
+    // dependency repository block, but fall back to pluginManagement or a
+    // top-level repositories block rather than failing prebuild outright.
+    const anchors = [
+      /(dependencyResolutionManagement\s*\{[\s\S]*?repositories\s*\{)/,
+      /(pluginManagement\s*\{[\s\S]*?repositories\s*\{)/,
+    ];
+    const anchor = anchors.find((pattern) => pattern.test(source));
+    if (anchor) {
+      modConfig.modResults.contents = source.replace(
+        anchor,
+        "$1\n        maven { url 'https://jitpack.io' }",
+      );
+      return modConfig;
     }
-    modConfig.modResults.contents = source.replace(
-      anchor,
-      "$1\\n        maven { url 'https://jitpack.io' }",
-    );
+    const topLevelRepositories = /(^|\n)repositories\s*\{/;
+    if (topLevelRepositories.test(source)) {
+      modConfig.modResults.contents = source.replace(
+        topLevelRepositories,
+        "$1repositories {\n    maven { url 'https://jitpack.io' }",
+      );
+      return modConfig;
+    }
+
+    // If Gradle's settings do not declare any repository block, append a
+    // dependency-resolution block. Existing Expo autolinking configuration
+    // remains untouched.
+    modConfig.modResults.contents = source +
+      "\ndependencyResolutionManagement {\n" +
+      "    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n" +
+      "    repositories { maven { url 'https://jitpack.io' }; google(); mavenCentral() }\n" +
+      "}\n";
     return modConfig;
   });
 }
