@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { AudioSession, LiveKitRoom, useLocalParticipant } from '@livekit/react-native';
@@ -48,6 +48,7 @@ export default function VoiceScreen() {
   const [tokenData, setTokenData] = useState<VoiceTokenResponse | null>(null);
   const [error, setError] = useState('');
   const [leaving, setLeaving] = useState(false);
+  const leaveStarted = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +83,8 @@ export default function VoiceScreen() {
   }, [roomCode, name]);
 
   function leave() {
+    if (leaveStarted.current) return;
+    leaveStarted.current = true;
     setLeaving(true);
     router.back();
   }
