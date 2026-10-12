@@ -96,6 +96,59 @@ export async function setController(code: string, userId: string, enabled: boole
   });
 }
 
+
+/**
+ * Publish an authoritative room playback anchor. The host/controller should be
+ * the only caller; each transaction increments playbackRevision so clients can
+ * ignore stale snapshots. Position is milliseconds.
+ */
+export async function publishPlaybackAnchor(
+  code: string,
+  data: {
+    status: Room['status'];
+    currentItemId: string;
+    position: number;
+    playbackRevision?: number;
+    playbackStartedAt?: number;
+  },
+) {
+  const ref = roomRef(code);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists()) throw new Error('ROOM_NOT_FOUND');
+    const currentRevision = typeof snapshot.data().playbackRevision === 'number'
+      ? snapshot.data().playbackRevision as number
+      : 0;
+    const nextRevision = Math.max(currentRevision + 1, data.playbackRevision ?? 0);
+    transaction.update(ref, {
+      status: data.status,
+      currentItemId: data.currentItemId,
+      position: Math.max(0, data.position),
+      playbackRevision: nextRevision,
+      playbackStartedAt: data.status === 'playing'
+        ? (data.playbackStartedAt ?? Date.now())
+        : null,
+      playbackUpdatedAt: serverTimestamp(),
+      ...touch(),
+    });
+  });
+}
+
+/**
+ * Predict the current playhead position from a room's latest state anchor.
+ * Position is milliseconds. The source/player must resolve the same track on
+ * every client; this helper only defines the shared clock arithmetic.
+ */
+export function estimateRoomPositionMs(
+  room: Pick<Room, 'status' | 'position' | 'playbackUpdatedAt'>,
+  nowMs = Date.now(),
+) {
+  const anchor = Math.max(0, room.position);
+  if (room.status !== 'playing') return anchor;
+  const updatedAt = room.playbackUpdatedAt ?? nowMs;
+  return anchor + Math.max(0, nowMs - updatedAt);
+}
+
 export async function updatePlayback(
   code: string,
   data: Pick<Room, 'status' | 'position' | 'currentItemId'>,
