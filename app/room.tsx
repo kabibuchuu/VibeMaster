@@ -486,7 +486,7 @@ export default function RoomScreen() {
         channelTitle: item.channelTitle,
         thumbnail: item.thumbnail,
         duration: item.duration,
-        kind: item.kind === 'music' ? 'music' : 'video',
+        kind: 'music',
       });
       await setCurrentItem(roomCode, item.id, 'playing', 0);
       setRecommendations(previous => previous.filter(result => result.id !== item.id));
