@@ -63,8 +63,8 @@ export default function Search() {
       <View style={s.introRow}>
         <View style={s.introIcon}><Text style={s.introIconText}>♫</Text></View>
         <View style={{ flex: 1 }}>
-          <Text style={s.introTitle}>Only music. Always in sync.</Text>
-          <Text style={s.introSub}>Pick a track or add a playlist to your room.</Text>
+          <Text style={s.introTitle}>Discover music. Share the queue.</Text>
+          <Text style={s.introSub}>Add tracks to a room, or open them in YouTube Music.</Text>
         </View>
       </View>
 
