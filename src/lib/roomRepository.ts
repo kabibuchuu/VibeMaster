@@ -156,6 +156,41 @@ export function estimateRoomPositionMs(
  * Write a coherent timestamped playback command, incrementing a revision
  * transactionally so devices can discard stale snapshots.
  */
+
+/**
+ * Atomically choose the room playback engine and publish the authoritative
+ * playhead anchor. Used by the host/controller after native stream resolution
+ * succeeds, so subscribers never observe a native engine with stale waiting
+ * state or an unrelated timestamp.
+ */
+export async function setPlaybackEngine(
+  code: string,
+  engine: NonNullable<Room['playbackEngine']>,
+  anchor?: Pick<Room, 'status' | 'position' | 'currentItemId'>,
+) {
+  const ref = roomRef(code);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists()) throw new Error('ROOM_NOT_FOUND');
+    const room = snapshot.data();
+    const previous = typeof room.playbackRevision === 'number' ? room.playbackRevision : 0;
+    const now = Date.now();
+    const update: Record<string, unknown> = {
+      playbackEngine: engine,
+      playbackRevision: previous + 1,
+      playbackUpdatedAt: serverTimestamp(),
+      ...touch(),
+    };
+    if (anchor) {
+      update.status = anchor.status;
+      update.position = Math.max(0, anchor.position);
+      update.currentItemId = anchor.currentItemId;
+      update.playbackStartedAt = anchor.status === 'playing' ? now : null;
+    }
+    transaction.update(ref, update);
+  });
+}
+
 export async function updatePlayback(
   code: string,
   data: Pick<Room, 'status' | 'position' | 'currentItemId'>,
