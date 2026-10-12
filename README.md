@@ -96,9 +96,8 @@ The room header now links to the voice screen. Voice tokens are issued by a Fire
    ```sh
    firebase functions:secrets:set LIVEKIT_API_KEY
    firebase functions:secrets:set LIVEKIT_API_SECRET
-   firebase functions:config:set # not used for the new parameter API
    ```
-   Set the `LIVEKIT_URL` deployment parameter to your LiveKit server URL when prompted during deployment.
+   Set the `LIVEKIT_URL` deployment parameter to your LiveKit server URL when prompted during deployment. The URL should be the WebSocket URL for your LiveKit server, such as `wss://your-project.livekit.cloud`.
 4. Deploy with `firebase deploy --only functions:createVoiceToken`.
 5. Create a **development APK**, not Expo Go, and test join/mute/leave with at least two signed-in Android devices.
 
