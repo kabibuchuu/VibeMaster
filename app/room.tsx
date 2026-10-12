@@ -37,6 +37,7 @@ import {
   updatePlayback,
   updateRoom,
   setPlaybackEngine,
+  estimateRoomPositionSeconds,
   watchMessages,
   watchParticipants,
   watchRoom,
@@ -407,11 +408,7 @@ export default function RoomScreen() {
 
   const syncPlayer = () => {
     if (!room || !current) return;
-    const playbackAnchor = room.playbackUpdatedAt ?? room.updatedAt;
-    const elapsedMs = room.status === 'playing'
-      ? Math.max(0, Date.now() - playbackAnchor)
-      : 0;
-    const targetMs = Math.max(0, room.position * 1000 + elapsedMs);
+    const targetMs = Math.max(0, estimateRoomPositionSeconds(room) * 1000);
 
     if (room.playbackEngine === 'native') {
       if (nativeSyncInFlightRef.current || !nativeTrackItemRef.current) return;
