@@ -12,14 +12,15 @@ This document describes the target architecture, not a claim that the target sys
 - Firebase Authentication and Cloud Firestore for users, room state, participants, queue, and messages.
 - Music discovery currently uses YouTube Data API results.
 - app/room.tsx still hosts the YouTube IFrame Player API in a WebView. It is legacy playback and must be replaced before calling the app music-only.
-- Native/background audio playback and voice chat are not implemented yet.
+- A LiveKit voice screen and Firebase token callable have been added but are not yet deployed or device-tested.
+- Search results and room tracks can be opened in the YouTube Music app. External playback cannot be controlled or verified by VibeMaster.
 - EAS profiles are configuration only; a successful APK build and real-device test are still required.
 
 ## Target architecture
 
-### 1. Playback engine
+### 1. Playback engine and provider boundary
 
-Replace the WebView/IFrame player with a native Android audio engine behind a small platform-independent playback interface. Evaluate a React Native Track Player integration or a custom Android Media3 module against the current Expo/RN versions before committing to one.
+For YouTube Music, use only documented YouTube APIs and user-initiated handoff links unless YouTube grants written authorization for a different integration. The official IFrame player is an embedded audiovisual player, not an authorized native audio-stream source. Do not replace it with extracted stream URLs. A native background audio engine requires a separately authorized playable source or written provider permission.
 
 The playback interface should expose:
 - load a track from a supported, authorized audio source;
@@ -30,7 +31,7 @@ The playback interface should expose:
 
 Keep player state in one shared service/store. Portrait player, expanded player, and room controls must be views over the same engine—not separate players. Do not mount or retain a video WebView as a hidden playback dependency.
 
-**Audio-source constraint:** discovery metadata is not itself a playable audio stream. Do not assume a YouTube video ID is an audio URL, and do not implement scraping, stream extraction, or proxying as a workaround for the IFrame player. Select a source/API whose terms and rights permit the intended playback. Keep source resolution behind an adapter so the UI is not coupled to a provider.
+**YouTube policy constraint:** YouTube's current developer policies prohibit scraping, undocumented API use without express permission, separating audio from video, and background-player features. The app now exposes explicit links to open tracks in YouTube Music. VibeMaster cannot truthfully claim native background playback or synchronized control of tracks after handoff to the external app. See `docs/youtube-music-integration.md`.
 
 ### 2. Room synchronization
 
@@ -61,7 +62,7 @@ Metrolist is GPL-3.0. If code is copied or adapted, preserve license notices and
 
 ## Implementation sequence and acceptance criteria
 
-1. **Playback/source spike:** confirm a legally and technically supported audio source and a native player compatible with this Expo/RN version. Produce a development APK and verify one track can play, pause, seek, skip, and continue with the screen locked.
+1. **Playback/source gate:** test the official YouTube Music handoff on Android. If native background playback and cross-device sync are mandatory, obtain written provider authorization or choose a separately licensed source before implementing that engine.
 2. **Playback service:** add one authoritative player service, queue operations, loading/error states, audio focus, and media notification controls. Remove the IFrame WebView only when the replacement path is functional.
 3. **Room sync:** connect the native service to timestamped Firestore room state; test two physical Android devices, late join, seek, track change, host handoff, and reconnect.
 4. **Voice:** add LiveKit client and secured token issuance; test permission denial, mute, disconnect/reconnect, and concurrent music playback.
