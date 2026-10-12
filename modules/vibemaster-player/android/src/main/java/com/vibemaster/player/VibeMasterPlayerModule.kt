@@ -88,7 +88,19 @@ class VibeMasterPlayerModule : Module() {
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            sendEvent("playbackStateChanged", mapOf("isPlaying" to isPlaying))
+            val player = controller
+            sendEvent(
+                "playbackStateChanged",
+                mapOf(
+                    "isPlaying" to isPlaying,
+                    "playbackState" to (player?.playbackState ?: Player.STATE_IDLE),
+                    "positionMs" to (player?.currentPosition ?: 0L),
+                    "durationMs" to (player?.duration?.coerceAtLeast(0L) ?: 0L),
+                    "currentIndex" to (player?.currentMediaItemIndex ?: 0),
+                    "title" to (player?.mediaMetadata?.title?.toString().orEmpty()),
+                    "artist" to (player?.mediaMetadata?.artist?.toString().orEmpty()),
+                ),
+            )
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
