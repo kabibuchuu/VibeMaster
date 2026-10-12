@@ -40,7 +40,7 @@ import {
   watchParticipants,
   watchRoom,
 } from '../src/lib/roomRepository';
-import { getPlaylistItems } from '../src/lib/youtube';
+import { getPlaylistItems, searchYouTube, type YouTubeResult } from '../src/lib/youtube';
 import type { Participant, QueueItem, Room, RoomMessage } from '../src/types/room';
 
 type PlayerMessage =
@@ -132,6 +132,9 @@ export default function RoomScreen() {
   const [fullScreen, setFullScreen] = useState(false);
   const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
   const [fullscreenInteraction, setFullscreenInteraction] = useState(0);
+  const [recommendations, setRecommendations] = useState<YouTubeResult[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [addingRecommendation, setAddingRecommendation] = useState<string | null>(null);
   const endedItemRef = useRef('');
   const [volume, setVolume] = useState(1);
   const [brightness, setBrightness] = useState(0.7);
@@ -224,6 +227,25 @@ export default function RoomScreen() {
     duration,
     roomCode,
   ]);
+
+  useEffect(() => {
+    if (!current?.title) {
+      setRecommendations([]);
+      return;
+    }
+    let cancelled = false;
+    setRecommendationsLoading(true);
+    const query = [current.title, current.channelTitle].filter(Boolean).join(' ');
+    void searchYouTube(query, current.kind === 'music' ? 'music' : 'video')
+      .then(items => {
+        if (cancelled) return;
+        const queuedIds = new Set((room?.queue ?? []).map(item => item.videoId || item.id));
+        setRecommendations(items.filter(item => item.kind !== 'playlist' && item.id !== current.videoId && !queuedIds.has(item.id)).slice(0, 10));
+      })
+      .catch(() => { if (!cancelled) setRecommendations([]); })
+      .finally(() => { if (!cancelled) setRecommendationsLoading(false); });
+    return () => { cancelled = true; };
+  }, [current?.id, current?.title, current?.channelTitle, current?.kind, room?.queue]);
 
   useEffect(() => {
     endedItemRef.current = '';
@@ -450,6 +472,27 @@ export default function RoomScreen() {
       'window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:target}));' +
       '}true;',
     );
+  }
+
+  async function addRecommendation(item: YouTubeResult) {
+    if (!canControl || addingRecommendation) return;
+    setAddingRecommendation(item.id);
+    try {
+      await addQueueItem(roomCode, {
+        id: item.id,
+        videoId: item.id,
+        title: item.title,
+        channelTitle: item.channelTitle,
+        thumbnail: item.thumbnail,
+        duration: item.duration,
+        kind: item.kind === 'music' ? 'music' : 'video',
+      });
+      setRecommendations(previous => previous.filter(result => result.id !== item.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add recommendation.');
+    } finally {
+      setAddingRecommendation(null);
+    }
   }
 
   async function selectItem(item: QueueItem) {
@@ -850,6 +893,34 @@ export default function RoomScreen() {
         </TouchableOpacity>
       ) : null}
 
+      {current && (recommendationsLoading || recommendations.length > 0) ? (
+        <View style={s.recommendationSection}>
+          <View style={s.recommendationHeading}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.recommendationKicker}>KEEP THE VIBE GOING</Text>
+              <Text style={s.recommendationTitle}>Up next, for you</Text>
+            </View>
+            {recommendationsLoading ? <ActivityIndicator color="#a78bfa" size="small" /> : null}
+          </View>
+          {recommendations.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.recommendationList}>
+              {recommendations.map(item => (
+                <View key={item.id} style={s.recommendationCard}>
+                  <Image source={{ uri: item.thumbnail }} style={s.recommendationThumb} />
+                  <Text numberOfLines={2} style={s.recommendationCardTitle}>{item.title}</Text>
+                  <Text numberOfLines={1} style={s.recommendationChannel}>{item.channelTitle}</Text>
+                  {canControl ? (
+                    <TouchableOpacity style={s.recommendationAdd} onPress={() => void addRecommendation(item)} disabled={addingRecommendation !== null}>
+                      <Text style={s.recommendationAddText}>{addingRecommendation === item.id ? 'Adding…' : '＋ Add to queue'}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ))}
+            </ScrollView>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={s.queueHead}>
         <Text style={s.section}>UP NEXT · {Math.max(0, room.queue.length - (current ? 1 : 0))}</Text>
         <View style={s.queueActions}>
@@ -1172,6 +1243,17 @@ const s = StyleSheet.create({
   joinBtnText: { color: '#cfc2ed', fontWeight: '800' },
   syncBtn: { backgroundColor: '#8b5cf6', padding: 14, borderRadius: 14, alignItems: 'center', marginTop: 10 },
   syncBtnText: { color: '#fff', fontWeight: '900' },
+  recommendationSection: { marginTop: 20, marginBottom: 8 },
+  recommendationHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  recommendationKicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.8 },
+  recommendationTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginTop: 4 },
+  recommendationList: { gap: 12, paddingRight: 16, paddingBottom: 4 },
+  recommendationCard: { width: 172, backgroundColor: '#111019', borderRadius: 16, borderWidth: 1, borderColor: '#262231', padding: 9 },
+  recommendationThumb: { width: '100%', height: 94, borderRadius: 10, backgroundColor: '#201d27' },
+  recommendationCardTitle: { color: '#f7f5fb', fontSize: 12, lineHeight: 16, fontWeight: '800', marginTop: 9, minHeight: 32 },
+  recommendationChannel: { color: '#8e8999', fontSize: 10, marginTop: 4 },
+  recommendationAdd: { backgroundColor: '#2a1c4d', borderRadius: 9, paddingVertical: 9, alignItems: 'center', marginTop: 9 },
+  recommendationAddText: { color: '#d9c9ff', fontSize: 11, fontWeight: '900' },
   queueHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 7 },
   queueActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   section: { color: '#777481', fontSize: 11, fontWeight: '900', letterSpacing: 1.4 },
