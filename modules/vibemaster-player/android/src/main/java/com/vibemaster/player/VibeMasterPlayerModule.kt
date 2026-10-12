@@ -5,11 +5,15 @@ import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import com.google.common.util.concurrent.ListenableFuture
 import java.util.concurrent.TimeUnit
 
 class VibeMasterPlayerModule : Module() {
@@ -20,31 +24,45 @@ class VibeMasterPlayerModule : Module() {
         Name("VibeMasterPlayer")
         Events("playbackStateChanged")
 
-        AsyncFunction("play") { uri: String, title: String, artist: String ->
+        AsyncFunction("resolveTrack") { videoId: String ->
+            val context = requireNotNull(appContext.reactContext) {
+                "React context is not available"
+            }
+            YouTubeStreamResolver.initialize(context)
+            val stream = YouTubeStreamResolver.resolve(videoId)
+            mapOf(
+                "videoId" to stream.videoId,
+                "url" to stream.url,
+                "mimeType" to stream.mimeType,
+                "bitrate" to stream.bitrate,
+                "clientName" to stream.clientName,
+                "headers" to stream.headers,
+            )
+        }
+
+        AsyncFunction("play") { uri: String, title: String, artist: String, headers: Map<String, String>? ->
+            val context = requireNotNull(appContext.reactContext) { "React context is not available" }
             val player = getController()
-            val metadata = MediaMetadata.Builder()
-                .setTitle(title)
-                .setArtist(artist)
-                .build()
-            player.setMediaItem(MediaItem.Builder().setUri(uri).setMediaMetadata(metadata).build())
+            val source = createMediaSource(context, uri, title, artist, headers.orEmpty())
+            player.setMediaSource(source)
             player.prepare()
             player.play()
             true
         }
 
-        AsyncFunction("setQueue") { tracks: List<Map<String, String>>, startIndex: Int ->
+        AsyncFunction("setQueue") { tracks: List<Map<String, Any?>>, startIndex: Int ->
             require(tracks.isNotEmpty()) { "Queue cannot be empty" }
-            val mediaItems = tracks.map { track ->
-                val uri = requireNotNull(track["uri"]) { "Each queue item needs a uri" }
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(track["title"].orEmpty())
-                    .setArtist(track["artist"].orEmpty())
-                    .build()
-                MediaItem.Builder().setUri(uri).setMediaMetadata(metadata).build()
+            val context = requireNotNull(appContext.reactContext) { "React context is not available" }
+            val sources = tracks.map { track ->
+                val uri = requireNotNull(track["uri"] as? String) { "Each queue item needs a uri" }
+                val title = track["title"] as? String ?: ""
+                val artist = track["artist"] as? String ?: ""
+                val headers = stringMap(track["headers"])
+                createMediaSource(context, uri, title, artist, headers)
             }
             val player = getController()
-            val safeIndex = startIndex.coerceIn(0, mediaItems.lastIndex)
-            player.setMediaItems(mediaItems, safeIndex, 0L)
+            val safeIndex = startIndex.coerceIn(0, sources.lastIndex)
+            player.setMediaSources(sources, safeIndex, 0L)
             player.prepare()
             player.play()
             true
@@ -77,6 +95,7 @@ class VibeMasterPlayerModule : Module() {
                 "currentIndex" to player.currentMediaItemIndex,
                 "title" to player.mediaMetadata.title?.toString().orEmpty(),
                 "artist" to player.mediaMetadata.artist?.toString().orEmpty(),
+                "playbackState" to player.playbackState,
             )
         }
         OnDestroy {
@@ -87,21 +106,40 @@ class VibeMasterPlayerModule : Module() {
         }
     }
 
+    private fun createMediaSource(
+        context: Context,
+        uri: String,
+        title: String,
+        artist: String,
+        headers: Map<String, String>,
+    ): MediaSource {
+        val metadata = MediaMetadata.Builder().setTitle(title).setArtist(artist).build()
+        val item = MediaItem.Builder()
+            .setUri(uri)
+            .setMediaMetadata(metadata)
+            .build()
+        val headerMap = headers.filterKeys { !it.equals("User-Agent", ignoreCase = true) }
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent(headers.entries.firstOrNull { it.key.equals("User-Agent", ignoreCase = true) }?.value
+                ?: "VibeMaster/Android")
+            .setDefaultRequestProperties(headerMap)
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+        return DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(item)
+    }
+
+    private fun stringMap(value: Any?): Map<String, String> {
+        val input = value as? Map<*, *> ?: return emptyMap()
+        return input.mapNotNull { (key, item) ->
+            val name = key as? String
+            val headerValue = item as? String
+            if (name != null && headerValue != null) name to headerValue else null
+        }.toMap()
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             val player = controller
-            sendEvent(
-                "playbackStateChanged",
-                mapOf(
-                    "isPlaying" to isPlaying,
-                    "playbackState" to (player?.playbackState ?: Player.STATE_IDLE),
-                    "positionMs" to (player?.currentPosition ?: 0L),
-                    "durationMs" to (player?.duration?.coerceAtLeast(0L) ?: 0L),
-                    "currentIndex" to (player?.currentMediaItemIndex ?: 0),
-                    "title" to (player?.mediaMetadata?.title?.toString().orEmpty()),
-                    "artist" to (player?.mediaMetadata?.artist?.toString().orEmpty()),
-                ),
-            )
+            sendEvent("playbackStateChanged", stateMap(player, isPlaying))
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -116,21 +154,19 @@ class VibeMasterPlayerModule : Module() {
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
-            val player = controller
-            sendEvent(
-                "playbackStateChanged",
-                mapOf(
-                    "playbackState" to playbackState,
-                    "isPlaying" to (player?.isPlaying ?: false),
-                    "positionMs" to (player?.currentPosition ?: 0L),
-                    "durationMs" to (player?.duration?.coerceAtLeast(0L) ?: 0L),
-                    "currentIndex" to (player?.currentMediaItemIndex ?: 0),
-                    "title" to (player?.mediaMetadata?.title?.toString().orEmpty()),
-                    "artist" to (player?.mediaMetadata?.artist?.toString().orEmpty()),
-                ),
-            )
+            sendEvent("playbackStateChanged", stateMap(controller, controller?.isPlaying ?: false))
         }
     }
+
+    private fun stateMap(player: Player?, isPlaying: Boolean) = mapOf(
+        "playbackState" to (player?.playbackState ?: Player.STATE_IDLE),
+        "isPlaying" to isPlaying,
+        "positionMs" to (player?.currentPosition ?: 0L),
+        "durationMs" to (player?.duration?.coerceAtLeast(0L) ?: 0L),
+        "currentIndex" to (player?.currentMediaItemIndex ?: 0),
+        "title" to (player?.mediaMetadata?.title?.toString().orEmpty()),
+        "artist" to (player?.mediaMetadata?.artist?.toString().orEmpty()),
+    )
 
     private fun getController(): MediaController {
         controller?.let { return it }
