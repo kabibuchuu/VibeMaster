@@ -275,6 +275,30 @@ export default function RoomScreen() {
     }
   }, [room?.playbackEngine, current?.id, nativePlaybackActive, nativePlaybackBusy]);
 
+  // Refresh the visible native playhead more smoothly than the 3-second room
+  // reconciliation loop; this is display-only and does not publish room writes.
+  useEffect(() => {
+    if (room?.playbackEngine !== 'native') return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const state = await nativePlayback.getState();
+        if (!active) return;
+        setNativePlaybackPosition(state.positionMs / 1000);
+        setNativePlaybackDuration(state.durationMs / 1000);
+      } catch {
+        // Resolution/startup errors are surfaced by playCurrentNatively; do not
+        // replace the user's useful error with a transient idle-state read.
+      }
+    };
+    void poll();
+    const timer = setInterval(() => { void poll(); }, 750);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [room?.playbackEngine]);
+
   useEffect(() => {
     if (!roomCode) return;
     return watchParticipants(roomCode, setPeople, e => setError(e.message));
@@ -596,8 +620,8 @@ export default function RoomScreen() {
   }
 
   function seekToFraction(fraction: number) {
-    if (!playerDuration) return;
-    seekToPosition(playerDuration * Math.max(0, Math.min(1, fraction)));
+    if (!displayedDuration) return;
+    seekToPosition(displayedDuration * Math.max(0, Math.min(1, fraction)));
   }
 
   function formatTime(seconds: number) {
