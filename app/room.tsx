@@ -314,7 +314,7 @@ export default function RoomScreen() {
       if (state === 'active') syncPlayer();
     });
     return () => subscription.remove();
-  }, [fullScreen, playerReady, fullscreenPlayerReady, room?.version, room?.status, room?.position, room?.updatedAt, current?.id]);
+  }, [fullScreen, playerReady, fullscreenPlayerReady, room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id]);
 
   async function publish(status: Room['status'], position: number) {
     if (!current || !canControl) return;
@@ -337,6 +337,7 @@ export default function RoomScreen() {
         if (isFullscreenPlayer) setFullscreenPlayerReady(true);
         else setPlayerReady(true);
         setPlayerError(null);
+        setError(previous => previous.includes('renderer stopped unexpectedly') ? '' : previous);
         return;
       }
 
