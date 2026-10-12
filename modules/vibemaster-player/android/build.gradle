@@ -17,4 +17,13 @@ dependencies {
   implementation 'androidx.media3:media3-exoplayer:1.8.0'
   implementation 'androidx.media3:media3-session:1.8.0'
   implementation 'com.google.guava:guava:33.4.8-android'
+
+  // BitChord and Metrolist both use this GPL-3.0 InnerTube extraction library.
+  // Keep it behind the native source adapter; the JS layer only sees a URL + metadata.
+  implementation 'com.github.MetrolistGroup.innertubex:innertubex:v0.7.0'
+  implementation 'io.ktor:ktor-client-okhttp:3.5.2'
+  implementation 'io.ktor:ktor-client-content-negotiation:3.5.2'
+  implementation 'io.ktor:ktor-serialization-kotlinx-json:3.5.2'
+  implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0'
+  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
 }
