@@ -4,6 +4,7 @@ export type NativeQueueTrack = {
   uri: string;
   title: string;
   artist: string;
+  mimeType?: string;
   headers?: Record<string, string>;
 };
 
@@ -29,7 +30,7 @@ export type NativePlaybackEvent = Partial<NativePlaybackState> & { title?: strin
 
 type VibeMasterPlayerNativeModule = {
   resolveTrack(videoId: string): Promise<ResolvedNativeTrack>;
-  play(uri: string, title: string, artist: string, headers?: Record<string, string>): Promise<boolean>;
+  play(uri: string, title: string, artist: string, mimeType?: string, headers?: Record<string, string>): Promise<boolean>;
   setQueue(tracks: NativeQueueTrack[], startIndex: number): Promise<boolean>;
   pause(): Promise<boolean>;
   stop(): Promise<boolean>;
@@ -58,7 +59,7 @@ function getNativeModule() {
 export const nativePlayback = {
   resolveTrack: (videoId: string) => getNativeModule().resolveTrack(videoId),
   play: (track: NativeQueueTrack) =>
-    getNativeModule().play(track.uri, track.title, track.artist, track.headers ?? {}),
+    getNativeModule().play(track.uri, track.title, track.artist, track.mimeType ?? '', track.headers ?? {}),
   setQueue: (tracks: NativeQueueTrack[], startIndex = 0) => getNativeModule().setQueue(tracks, startIndex),
   pause: () => getNativeModule().pause(),
   stop: () => getNativeModule().stop(),
