@@ -9,11 +9,12 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import com.google.common.util.concurrent.ListenableFuture
 import java.util.concurrent.TimeUnit
 
 class VibeMasterPlayerModule : Module() {
     private var controller: MediaController? = null
-    private var controllerFuture: com.google.common.util.concurrent.ListenableFuture<MediaController>? = null
+    private var controllerFuture: ListenableFuture<MediaController>? = null
 
     override fun definition() = ModuleDefinition {
         Name("VibeMasterPlayer")
@@ -139,7 +140,13 @@ class VibeMasterPlayerModule : Module() {
         val token = SessionToken(context, ComponentName(context, VibeMasterPlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
         controllerFuture = future
-        val created = future.get(10, TimeUnit.SECONDS)
+        val created = try {
+            future.get(10, TimeUnit.SECONDS)
+        } catch (error: Exception) {
+            future.cancel(true)
+            controllerFuture = null
+            throw IllegalStateException("Unable to connect to VibeMaster playback service", error)
+        }
         created.addListener(playerListener)
         controller = created
         return created
