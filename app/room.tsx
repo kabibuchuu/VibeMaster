@@ -709,7 +709,6 @@ export default function RoomScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={s.roomScroll} contentContainerStyle={s.roomScrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       {current ? (
         <View style={[s.player, fullScreen && s.fullscreenVideo]}>
           {current ? (
@@ -745,6 +744,9 @@ export default function RoomScreen() {
           )}
         </View>
       ) : null}
+
+      <ScrollView style={s.roomScroll} contentContainerStyle={s.roomScrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
 
       {current ? (
         <View style={s.playerControlPanel}>
