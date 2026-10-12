@@ -742,6 +742,12 @@ export default function RoomScreen() {
           ) : (
             <View style={s.emptyPlayer}><Text style={s.emptyPlayerText}>Add something to start the vibe.</Text></View>
           )}
+          {!fullScreen ? (
+            <View pointerEvents="none" style={s.playerStatusBadge}>
+              <View style={[s.playerStatusDot, room.status !== 'playing' && s.playerStatusDotPaused]} />
+              <Text style={s.playerStatusText}>{room.status === 'playing' ? 'LIVE · IN SYNC' : 'ROOM PAUSED'}</Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -793,10 +799,10 @@ export default function RoomScreen() {
 
           {canControl ? (
             <View style={s.compactControls}>
-              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!playerReady} accessibilityRole="button" accessibilityLabel="Previous track">
                 <Text style={s.compactControlText}>⏮</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!playerReady} accessibilityRole="button" accessibilityLabel="Rewind ten seconds">
                 <Text style={s.compactControlText}>↶</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -806,10 +812,10 @@ export default function RoomScreen() {
               >
                 <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!playerReady} accessibilityRole="button" accessibilityLabel="Forward ten seconds">
                 <Text style={s.compactControlText}>↷</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!playerReady} accessibilityRole="button" accessibilityLabel="Next track">
                 <Text style={s.compactControlText}>⏭</Text>
               </TouchableOpacity>
             </View>
@@ -1242,12 +1248,16 @@ const s = StyleSheet.create({
   people: { backgroundColor: '#15131d', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
   peopleText: { color: '#c4b5fd', fontWeight: '800' },
   player: { width: '100%', aspectRatio: 16 / 9, minHeight: 190, maxHeight: 280, borderRadius: 22, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: '#2b2636' },
+  playerStatusBadge: { position: 'absolute', left: 12, top: 12, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 999, backgroundColor: 'rgba(7,7,12,0.78)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  playerStatusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#65e6a8' },
+  playerStatusDotPaused: { backgroundColor: '#aaa4b7' },
+  playerStatusText: { color: '#f5f0ff', fontSize: 9, fontWeight: '900', letterSpacing: 1.1 },
   emptyPlayer: { flex: 1, backgroundColor: '#0b0a10', alignItems: 'center', justifyContent: 'center' },
   emptyPlayerText: { color: '#67636f', fontSize: 12 },
-  playerControlPanel: { backgroundColor: '#111019', borderRadius: 22, marginTop: 12, padding: 16, borderWidth: 1, borderColor: '#30263d' },
+  playerControlPanel: { backgroundColor: '#111019', borderRadius: 24, marginTop: 14, padding: 17, borderWidth: 1, borderColor: '#30263d', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
   playerIdentityRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   playerEyebrow: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
-  playerTitle: { color: '#fff', fontSize: 15, fontWeight: '900', marginTop: 3 },
+  playerTitle: { color: '#fff', fontSize: 17, lineHeight: 22, fontWeight: '900', marginTop: 5 },
   playerChannel: { color: '#777481', fontSize: 11, marginTop: 2 },
   iconButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
   iconButtonText: { color: '#dcd5e7', fontSize: 19 },
@@ -1256,10 +1266,10 @@ const s = StyleSheet.create({
   playerTimeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
   playerTime: { color: '#fff', fontSize: 10, fontWeight: '700' },
   playerAccess: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  compactControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, paddingTop: 10 },
-  compactControl: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
+  compactControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingTop: 13, paddingHorizontal: 1 },
+  compactControl: { width: 40, height: 44, borderRadius: 14, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#302b3b' },
   compactControlText: { color: '#eee', fontSize: 20, fontWeight: '800' },
-  mainPlay: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#9565f8', alignItems: 'center', justifyContent: 'center', shadowColor: '#8b5cf6', shadowOpacity: 0.24, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  mainPlay: { width: 62, height: 62, borderRadius: 22, backgroundColor: '#9565f8', alignItems: 'center', justifyContent: 'center', shadowColor: '#8b5cf6', shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 5 },
   mainPlayText: { color: '#fff', fontSize: 22, fontWeight: '900' },
   settingsPanel: { marginTop: 12, backgroundColor: '#0b0a10', borderRadius: 14, padding: 12 },
   settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
@@ -1270,16 +1280,16 @@ const s = StyleSheet.create({
   settingButtonText: { color: '#cfc2ed', fontSize: 11, fontWeight: '900' },
   fullscreenRoot: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#000', zIndex: 25, elevation: 25 },
   fullscreenTapArea: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 1, elevation: 1 },
-  fullscreenHeader: { position: 'absolute', zIndex: 30, elevation: 30, top: 12, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 14, backgroundColor: 'rgba(5,5,9,0.62)' },
+  fullscreenHeader: { position: 'absolute', zIndex: 30, elevation: 30, top: 14, left: 18, right: 18, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12, borderRadius: 20, backgroundColor: 'rgba(10,9,15,0.82)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   fullscreenKicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
   fullscreenTitle: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 2 },
   fullscreenChannel: { color: '#777481', fontSize: 11, marginTop: 2 },
-  fullscreenClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#201d27', alignItems: 'center', justifyContent: 'center' },
+  fullscreenClose: { width: 42, height: 42, borderRadius: 15, backgroundColor: '#282331', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   fullscreenCloseText: { color: '#fff', fontSize: 25, lineHeight: 27 },
   fullscreenVideo: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, width: '100%', height: '100%', borderRadius: 0, backgroundColor: '#000', overflow: 'hidden', zIndex: 20, elevation: 20 },
   fullscreenControls: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 76, left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, paddingVertical: 10, paddingHorizontal: 8, backgroundColor: 'rgba(12,11,18,0.78)', borderRadius: 22, borderWidth: 1, borderColor: 'rgba(196,181,253,0.22)' },
   fullscreenProgress: { position: 'absolute', zIndex: 30, elevation: 30, left: 18, right: 18, bottom: 48 },
-  fullscreenTimeRow: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 12, left: 22, right: 22, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(5,5,9,0.56)' },
+  fullscreenTimeRow: { position: 'absolute', zIndex: 30, elevation: 30, bottom: 12, left: 22, right: 22, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: 'rgba(10,9,15,0.74)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   fullscreenSettings: { position: 'absolute', zIndex: 31, elevation: 31, right: 18, bottom: 120, width: 260, backgroundColor: 'rgba(17,16,25,0.96)', borderRadius: 14, padding: 12 },
   scrubWrap: { marginTop: 7, marginHorizontal: -8, height: 28, justifyContent: 'center' },
   error: { backgroundColor: '#35151c', borderRadius: 14, padding: 12, marginTop: 10 },
