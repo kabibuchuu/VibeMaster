@@ -121,10 +121,6 @@ class VibeMasterPlayerModule : Module() {
         val future = MediaController.Builder(context, token).buildAsync()
         controllerFuture = future
         val created = future.get(10, TimeUnit.SECONDS)
-        created.addListener(
-            { /* the first state read happens on the next call */ },
-            { command -> command.run() },
-        )
         created.addListener(playerListener)
         controller = created
         return created
