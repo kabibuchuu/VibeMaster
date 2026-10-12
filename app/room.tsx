@@ -684,6 +684,14 @@ export default function RoomScreen() {
           <Text style={s.kicker}>{room.mode.toUpperCase()} ROOM</Text>
           <Text style={s.title}>{roomCode}</Text>
         </View>
+        <TouchableOpacity
+          style={[s.people, { marginRight: 8 }]}
+          onPress={() => router.push({ pathname: '/voice', params: { code: roomCode, name: name || 'Guest' } })}
+          accessibilityRole="button"
+          accessibilityLabel="Join voice chat"
+        >
+          <Text style={s.peopleText}>♫ Voice</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={s.people} onPress={() => (isHost ? setManageOpen(true) : void shareRoom())}>
           <Text style={s.peopleText}>● {people.length}</Text>
         </TouchableOpacity>
