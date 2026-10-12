@@ -49,3 +49,16 @@ A first native playback foundation has now been added on `feat/music-first-recon
 - `src/lib/nativePlayback.ts` defines the typed JS boundary for track URIs, queue operations, playback controls, and state reads.
 
 **This is scaffolding, not a verified end-to-end player.** The YouTube Music/InnerTube catalog and stream-resolution adapter has not yet been integrated, the room screen still uses the WebView player, and a native Android build/device test has not yet passed. The next implementation step is to connect a Metrolist-compatible source adapter to the native player, then replace the room's WebView only after the complete queue/room flow is smoke-tested. Keep the PR draft until the acceptance gates above pass.
+
+## BitChord comparative audit (2026-10-12)
+
+User-provided fork: https://github.com/kabibuchuu/BitChord (GPL-3.0). Upstream repository named in its README is https://github.com/kushagrasinghx/BitChord. The fork is an Android/Kotlin and shared Kotlin project; it is not a React Native dependency. Relevant verified files in the fork:
+- `shared/src/jvmSharedMain/kotlin/com/music/bitchord/data/innertube/InnerTubeXResolver.kt`: provider wrapper around MetrolistGroup/innertubex, including locale/session config, extraction choices, and short-lived resolved-stream metadata.
+- `shared/src/jvmSharedMain/kotlin/com/music/bitchord/data/innertube/StreamResolver.kt`: layered resolver (InnerTubeX first, NewPipe fallback, URL probing).
+- `app/src/main/java/com/music/bitchord/playback/PlaybackService.kt`: Media3 service with a wide set of audio features.
+- `app/src/main/java/com/music/bitchord/playback/PartySync.kt` and `app/src/main/java/com/music/bitchord/data/listentogether/ListenTogether.kt`: timestamped party playback model, sequence handling, server-clock alignment, drift reconciliation, host/control semantics.
+- The service and resolver are large and depend heavily on BitChord's app types, repositories, logging, auth/session settings, and source registry. Directly copying either whole file into the small Expo module would not compile and would import a lot of unrelated complexity.
+
+Useful architecture to adapt independently: keep the provider resolver behind a VibeMaster-native interface; keep the player in a MediaSessionService; implement room state around monotonic sequence/revision, server timestamp/clock offset, and drift thresholds; ensure inbound player corrections are not re-published as user commands. Existing Firebase room coordination will need an adapter rather than transplanting BitChord's WebSocket party service.
+
+License: the fork reports GPL-3.0. Any copied or adapted code requires the applicable notices, modification markings and corresponding-source compliance. The source-provider terms and rights are a separate question from GPL. The current audit does not copy the large resolver/service/PoToken machinery wholesale.
