@@ -39,6 +39,13 @@ Metrolist is GPL-3.0. If VibeMaster copies or adapts GPL-covered implementation 
 4. Add voice chat with a server-issued, room-scoped LiveKit token; test permission denial, mute, leave/rejoin, and music playing concurrently.
 5. Build and install an APK; run typecheck, native build, Firebase rules checks, license review, and multi-device acceptance tests.
 
-## Current status
+## Current implementation status (2026-10-12)
 
-This audit is a plan and source review, not implementation evidence. The current branch still has the YouTube IFrame API in `app/room.tsx`; native audio-only playback and voice chat remain incomplete. Do not mark the PR ready or the product release-ready until the gates above pass.
+A first native playback foundation has now been added on `feat/music-first-reconstruction`:
+
+- Local Expo module at `modules/vibemaster-player/` exposes Media3 controls to TypeScript.
+- `VibeMasterPlaybackService` owns a `MediaSession` and ExoPlayer instance for playback independent of React screen lifecycle.
+- `plugins/with-vibemaster-playback.js` registers the Android media playback service and required foreground-service permissions.
+- `src/lib/nativePlayback.ts` defines the typed JS boundary for track URIs, queue operations, playback controls, and state reads.
+
+**This is scaffolding, not a verified end-to-end player.** The YouTube Music/InnerTube catalog and stream-resolution adapter has not yet been integrated, the room screen still uses the WebView player, and a native Android build/device test has not yet passed. The next implementation step is to connect a Metrolist-compatible source adapter to the native player, then replace the room's WebView only after the complete queue/room flow is smoke-tested. Keep the PR draft until the acceptance gates above pass.
