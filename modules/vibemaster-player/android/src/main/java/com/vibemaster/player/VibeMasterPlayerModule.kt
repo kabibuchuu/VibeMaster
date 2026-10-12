@@ -40,10 +40,10 @@ class VibeMasterPlayerModule : Module() {
             )
         }
 
-        AsyncFunction("play") { uri: String, title: String, artist: String, headers: Map<String, String>? ->
+        AsyncFunction("play") { uri: String, title: String, artist: String, mimeType: String?, headers: Map<String, String>? ->
             val context = requireNotNull(appContext.reactContext) { "React context is not available" }
             val player = getController()
-            val source = createMediaSource(context, uri, title, artist, headers.orEmpty())
+            val source = createMediaSource(context, uri, title, artist, mimeType, headers.orEmpty())
             player.setMediaSource(source)
             player.prepare()
             player.play()
@@ -57,8 +57,9 @@ class VibeMasterPlayerModule : Module() {
                 val uri = requireNotNull(track["uri"] as? String) { "Each queue item needs a uri" }
                 val title = track["title"] as? String ?: ""
                 val artist = track["artist"] as? String ?: ""
+                val mimeType = track["mimeType"] as? String
                 val headers = stringMap(track["headers"])
-                createMediaSource(context, uri, title, artist, headers)
+                createMediaSource(context, uri, title, artist, mimeType, headers)
             }
             val player = getController()
             val safeIndex = startIndex.coerceIn(0, sources.lastIndex)
@@ -111,13 +112,13 @@ class VibeMasterPlayerModule : Module() {
         uri: String,
         title: String,
         artist: String,
+        mimeType: String?,
         headers: Map<String, String>,
     ): MediaSource {
         val metadata = MediaMetadata.Builder().setTitle(title).setArtist(artist).build()
-        val item = MediaItem.Builder()
-            .setUri(uri)
-            .setMediaMetadata(metadata)
-            .build()
+        val mediaItemBuilder = MediaItem.Builder().setUri(uri).setMediaMetadata(metadata)
+        if (!mimeType.isNullOrBlank()) mediaItemBuilder.setMimeType(mimeType)
+        val item = mediaItemBuilder.build()
         val headerMap = headers.filterKeys { !it.equals("User-Agent", ignoreCase = true) }
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(headers.entries.firstOrNull { it.key.equals("User-Agent", ignoreCase = true) }?.value
