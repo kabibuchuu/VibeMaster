@@ -11,11 +11,14 @@
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
     "plugins": [
       "expo-router",
+      "./plugins/with-vibemaster-playback",
       "@livekit/react-native-expo-plugin",
       "@config-plugins/react-native-webrtc"
     ]
