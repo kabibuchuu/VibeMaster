@@ -138,9 +138,9 @@ export async function publishPlaybackAnchor(
 }
 
 /**
- * Predict the current playhead position from a room's latest state anchor.
- * Position is milliseconds. The source/player must resolve the same track on
- * every client; this helper only defines the shared clock arithmetic.
+ * Estimate the current room playhead in seconds from its latest timestamp
+ * anchor. The helper is source-agnostic; every participant still resolves the
+ * same stable room item ID through their local playback provider.
  */
 export function estimateRoomPositionSeconds(
   room: Pick<Room, 'status' | 'position' | 'playbackUpdatedAt'>,
