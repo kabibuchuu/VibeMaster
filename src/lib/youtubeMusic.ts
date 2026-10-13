@@ -20,3 +20,12 @@ export async function openInYouTubeMusic(item: YouTubeMusicLink): Promise<void> 
   const url = getYouTubeMusicUrl(item);
   await Linking.openURL(url);
 }
+
+export function getYouTubeMusicSearchUrl(query: string): string {
+  return 'https://music.youtube.com/search?q=' + encodeURIComponent(query.trim());
+}
+
+export async function openYouTubeMusicSearch(query: string): Promise<void> {
+  if (!query.trim()) throw new Error('Enter a song or artist to search.');
+  await Linking.openURL(getYouTubeMusicSearchUrl(query));
+}
