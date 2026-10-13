@@ -39,7 +39,7 @@ export function parseYouTubeVideoId(input: string): string | null {
   if (/^[A-Za-z0-9_-]{11}$/.test(value)) return value;
   try {
     const url = new URL(value);
-    const host = url.hostname.toLowerCase().replace(/^www\\./, '');
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
     let candidate = '';
     if (host === 'youtu.be') candidate = url.pathname.split('/').filter(Boolean)[0] ?? '';
     else if (host === 'youtube.com' || host === 'music.youtube.com' || host.endsWith('.youtube.com')) {
