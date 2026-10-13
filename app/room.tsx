@@ -231,14 +231,31 @@ export default function RoomScreen() {
       nativeFailedItemRef.current = selected.id;
       nativeTrackItemRef.current = '';
       setNativePlaybackActive(false);
-      setNativePlaybackStatus(e instanceof Error ? e.message : 'Native playback could not start.');
+
+      // Native Media3 is not available on every device/build. Keep the room
+      // usable by falling back to the embedded YouTube player instead of
+      // trapping the listener behind a native playback error dialog.
       if (publishRoomEngine) {
-        Alert.alert(
-          'Native playback failed',
-          e instanceof Error ? e.message : 'No playable audio stream was returned. Try another track.',
+        const message = e instanceof Error ? e.message : 'Native audio could not start.';
+        setNativePlaybackStatus('Native audio unavailable; continuing with the embedded player.');
+        playerRef.current?.injectJavaScript(
+          'try{if(window.vmPlayer){window.vmPlayer.playVideo();}}catch(e){};true;',
         );
+        try {
+          await setPlaybackEngine(roomCode, 'iframe', {
+            status: 'playing',
+            position: 0,
+            currentItemId: selected.id,
+          });
+        } catch (fallbackError) {
+          setError(
+            fallbackError instanceof Error
+              ? `Playback fallback started, but room sync failed: ${fallbackError.message}`
+              : `Playback fallback started, but room sync failed. Original error: ${message}`,
+          );
+        }
       } else {
-        setError(e instanceof Error ? e.message : 'A participant could not resolve this track for native playback.');
+        setNativePlaybackStatus('Native audio unavailable on this device.');
       }
     } finally {
       setNativePlaybackBusy(false);
