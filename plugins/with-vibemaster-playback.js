@@ -1,5 +1,19 @@
 const { withAndroidManifest, withSettingsGradle, withAppBuildGradle } = require('@expo/config-plugins');
 
+function withVibeMasterMinSdk(config) {
+  return withAppBuildGradle(config, (modConfig) => {
+    let source = modConfig.modResults.contents;
+    // Keep this setting in generated Gradle rather than app.json, whose Expo schema
+    // does not accept android.minSdkVersion on this SDK line.
+    source = source.replace(/minSdkVersion\\s*(?:=\\s*)?rootProject\\.ext\\.minSdkVersion/g, 'minSdkVersion 26');
+    if (!/minSdkVersion\\s+26/.test(source)) {
+      source = source.replace(/defaultConfig\\s*\\{/, (match) => `${match}\\n        minSdkVersion 26`);
+    }
+    modConfig.modResults.contents = source;
+    return modConfig;
+  });
+}
+
 function withDebugAarMetadataDiagnostic(config) {
   return withAppBuildGradle(config, (modConfig) => {
     // Diagnostic only: this CI runner does not currently expose Android API 37,
@@ -86,6 +100,7 @@ function withPlaybackService(config) {
 }
 
 module.exports = function withVibeMasterPlayback(config) {
+  config = withVibeMasterMinSdk(config);
   config = withJitPackRepository(config);
   config = withDebugAarMetadataDiagnostic(config);
   config = withPlaybackService(config);
