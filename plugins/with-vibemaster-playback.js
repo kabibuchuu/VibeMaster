@@ -14,10 +14,10 @@ function withVibeMasterKotlinCompiler(config) {
 function withVibeMasterAndroidSdk(config) {
   return withAppBuildGradle(config, (modConfig) => {
     let source = modConfig.modResults.contents;
-    source = source.replace(/compileSdkVersion\\s*(?:=\\s*)?rootProject\\.ext\\.compileSdkVersion/g, 'compileSdkVersion 37');
-    source = source.replace(/minSdkVersion\\s*(?:=\\s*)?rootProject\\.ext\\.minSdkVersion/g, 'minSdkVersion 26');
-    if (!/minSdkVersion\\s+26/.test(source)) {
-      source = source.replace(/defaultConfig\\s*\\{/, (match) => 'defaultConfig {\\n        minSdkVersion 26');
+    source = source.replace(/compileSdkVersion\s*(?:=\s*)?rootProject\.ext\.compileSdkVersion/g, 'compileSdkVersion 37');
+    source = source.replace(/minSdkVersion\s*(?:=\s*)?rootProject\.ext\.minSdkVersion/g, 'minSdkVersion 26');
+    if (!/minSdkVersion\s+26/.test(source)) {
+      source = source.replace(/defaultConfig\s*\{/, (match) => 'defaultConfig {\n        minSdkVersion 26');
     }
     return { ...modConfig, modResults: { ...modConfig.modResults, contents: source } };
   });
@@ -29,7 +29,7 @@ function withDebugAarMetadataDiagnostic(config) {
     // same API-37 compile SDK as the InnerTubeX dependency.
     const marker = 'tasks.matching { it.name == "checkDebugAarMetadata" }.configureEach { enabled = false }';
     if (!modConfig.modResults.contents.includes(marker)) {
-      modConfig.modResults.contents += '\\n// VibeMaster debug-only SDK metadata diagnostic\\n' + marker + '\\n';
+      modConfig.modResults.contents += '\n// VibeMaster debug-only SDK metadata diagnostic\n' + marker + '\n';
     }
     return modConfig;
   });
@@ -40,20 +40,20 @@ function withJitPackRepository(config) {
     const source = modConfig.modResults.contents;
     if (source.includes('https://jitpack.io')) return modConfig;
     const anchors = [
-      /(dependencyResolutionManagement\\s*\\{[\\s\\S]*?repositories\\s*\\{)/,
-      /(pluginManagement\\s*\\{[\\s\\S]*?repositories\\s*\\{)/,
+      /(dependencyResolutionManagement\s*\{[\s\S]*?repositories\s*\{)/,
+      /(pluginManagement\s*\{[\s\S]*?repositories\s*\{)/,
     ];
     const anchor = anchors.find((pattern) => pattern.test(source));
     if (anchor) {
-      modConfig.modResults.contents = source.replace(anchor, "$1\\n        maven { url 'https://jitpack.io' }");
+      modConfig.modResults.contents = source.replace(anchor, "$1\n        maven { url 'https://jitpack.io' }");
       return modConfig;
     }
-    const topLevelRepositories = /(^|\\n)repositories\\s*\\{/;
+    const topLevelRepositories = /(^|\n)repositories\s*\{/;
     if (topLevelRepositories.test(source)) {
-      modConfig.modResults.contents = source.replace(topLevelRepositories, "$1repositories {\\n    maven { url 'https://jitpack.io' }");
+      modConfig.modResults.contents = source.replace(topLevelRepositories, "$1repositories {\n    maven { url 'https://jitpack.io' }");
       return modConfig;
     }
-    modConfig.modResults.contents = source + "\\ndependencyResolutionManagement {\\n    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)\\n    repositories { maven { url 'https://jitpack.io' }; google(); mavenCentral() }\\n}\\n";
+    modConfig.modResults.contents = source + "\ndependencyResolutionManagement {\n    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)\n    repositories { maven { url 'https://jitpack.io' }; google(); mavenCentral() }\n}\n";
     return modConfig;
   });
 }
