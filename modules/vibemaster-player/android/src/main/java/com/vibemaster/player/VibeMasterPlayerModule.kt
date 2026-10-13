@@ -14,6 +14,8 @@ import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class VibeMasterPlayerModule : Module() {
     private var controller: MediaController? = null
@@ -39,7 +41,7 @@ class VibeMasterPlayerModule : Module() {
             )
         }
 
-        AsyncFunction("play") { uri: String, title: String, artist: String, mimeType: String?, headers: Map<String, String>? ->
+        AsyncFunction("play") Coroutine { uri: String, title: String, artist: String, mimeType: String?, headers: Map<String, String>? ->
             val context = requireNotNull(appContext.reactContext) { "React context is not available" }
             val player = getController()
             val item = createMediaItem(uri, title, artist, mimeType, headers.orEmpty())
@@ -49,7 +51,7 @@ class VibeMasterPlayerModule : Module() {
             true
         }
 
-        AsyncFunction("setQueue") { tracks: List<Map<String, Any?>>, startIndex: Int ->
+        AsyncFunction("setQueue") Coroutine { tracks: List<Map<String, Any?>>, startIndex: Int ->
             require(tracks.isNotEmpty()) { "Queue cannot be empty" }
             val context = requireNotNull(appContext.reactContext) { "React context is not available" }
             val sources = tracks.map { track ->
@@ -68,29 +70,29 @@ class VibeMasterPlayerModule : Module() {
             true
         }
 
-        AsyncFunction("pause") { getController().pause(); true }
-        AsyncFunction("resume") { getController().play(); true }
-        AsyncFunction("seekTo") { positionMs: Double ->
+        AsyncFunction("pause") Coroutine { getController().pause(); true }
+        AsyncFunction("resume") Coroutine { getController().play(); true }
+        AsyncFunction("seekTo") Coroutine { positionMs: Double ->
             getController().seekTo(positionMs.toLong().coerceAtLeast(0L))
             true
         }
-        AsyncFunction("skipNext") {
+        AsyncFunction("skipNext") Coroutine {
             val player = getController()
             if (player.hasNextMediaItem()) player.seekToNextMediaItem()
             true
         }
-        AsyncFunction("skipPrevious") {
+        AsyncFunction("skipPrevious") Coroutine {
             val player = getController()
             if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
             else player.seekTo(0L)
             true
         }
-        AsyncFunction("stop") { getController().stop(); true }
-        AsyncFunction("setVolume") { volume: Double ->
+        AsyncFunction("stop") Coroutine { getController().stop(); true }
+        AsyncFunction("setVolume") Coroutine { volume: Double ->
             getController().volume = volume.toFloat().coerceIn(0f, 1f)
             true
         }
-        AsyncFunction("getState") {
+        AsyncFunction("getState") Coroutine {
             val player = getController()
             mapOf(
                 "isPlaying" to player.isPlaying,
@@ -180,8 +182,11 @@ class VibeMasterPlayerModule : Module() {
         val token = SessionToken(context, ComponentName(context, VibeMasterPlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
         controllerFuture = future
+        // Waiting on the JS/native module thread can prevent Android's main
+        // looper from delivering the MediaController connection callback. Wait
+        // on an IO dispatcher so the service can finish binding.
         val created = try {
-            future.get(10, TimeUnit.SECONDS)
+            withContext(Dispatchers.IO) { future.get(15, TimeUnit.SECONDS) }
         } catch (error: Exception) {
             future.cancel(true)
             controllerFuture = null
