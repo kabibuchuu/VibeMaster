@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  android-debug-apk:
+  android-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -29,7 +29,7 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - name: Install JavaScript dependencies
-        run: npm install
+        run: npm ci
       - name: Generate Android project
         run: npx expo prebuild --platform android --clean
       - name: Print generated Gradle configuration
@@ -38,13 +38,19 @@ jobs:
           cat android/settings.gradle
           echo '--- android/build.gradle ---'
           cat android/build.gradle
-      - name: Assemble debug APK
+      - name: Assemble standalone release APK
         working-directory: android
-        run: ./gradlew --no-daemon assembleDebug
-      - name: Upload debug APK
+        run: ./gradlew --no-daemon assembleRelease
+      - name: Verify JavaScript bundle is packaged
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          unzip -l "$APK" | grep -E 'assets/index\.android\.bundle|lib/.*/libhermes\.so' 
+          unzip -l "$APK" | grep -q 'assets/index.android.bundle'
+      - name: Upload standalone release APK
         uses: actions/upload-artifact@v4
         with:
-          name: VibeMaster-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: VibeMaster-standalone-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
