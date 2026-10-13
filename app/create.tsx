@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { auth } from '../firebase';
+import { ensureAnonymousAuth } from '../src/lib/auth';
 import { createRoom, setQueue, updateRoom } from '../src/lib/roomRepository';
 import { getPlaylistItems } from '../src/lib/youtube';
 import type { QueueItem } from '../src/types/room';
@@ -26,10 +27,15 @@ export default function Create() {
   useEffect(() => setCode(makeCode()), []);
 
   async function create() {
-    if (!auth.currentUser || !code || busy) return;
+    if (!code || busy) return;
     setBusy(true);
     setError('');
     try {
+      // The auth listener can render the home screen before anonymous sign-in finishes.
+      // Never silently ignore the create tap: establish a session or show the real error.
+      if (!auth.currentUser) await ensureAnonymousAuth();
+      const host = auth.currentUser;
+      if (!host) throw new Error('Sign-in did not complete. Check your connection and try again.');
       let queue: QueueItem[] = [];
       if (params.playlistId) {
         queue = (await getPlaylistItems(String(params.playlistId))).slice(0, 50);
@@ -50,7 +56,7 @@ export default function Create() {
       for (let attempt = 0; attempt < 8 && !createdCode; attempt++) {
         const candidate = attempt === 0 ? code : makeCode();
         try {
-          await createRoom(candidate, auth.currentUser.uid, 'music');
+          await createRoom(candidate, host.uid, 'music');
           createdCode = candidate;
           setCode(candidate);
         } catch (e) {
