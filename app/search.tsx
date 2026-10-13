@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInpu
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { getPlaylistItems, parseYouTubeVideoId, searchYouTube, youtubeConfigured, type YouTubeResult } from '../src/lib/youtube';
-import { openInYouTubeMusic, openYouTubeMusicSearch } from '../src/lib/youtubeMusic';
+import { openInYouTubeMusic } from '../src/lib/youtubeMusic';
 import { addQueueItem, appendQueueItems } from '../src/lib/roomRepository';
 import type { QueueItem } from '../src/types/room';
 
@@ -15,21 +15,14 @@ export default function Search() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!youtubeConfigured()) setError('No YouTube Data API key is configured. Paste a YouTube video link/ID to add it, or search in YouTube Music.');
+    if (!youtubeConfigured()) setError('In-app text search is not configured yet. Add the YouTube Data API key to the Android build to search songs and artists here. You can still paste a YouTube video link or ID.');
   }, []);
 
   async function search() {
     if (!query.trim() || loading) return;
-    // Without a YouTube Data API key, normal text search cannot return in-app results.
-    // Hand the query to the official YouTube Music search instead of appearing to do nothing.
+    // Do not silently send search queries out of VibeMaster when the API key is missing.
     if (!youtubeConfigured() && !parseYouTubeVideoId(query)) {
-      setError('Opening YouTube Music search. Paste a YouTube video link here to add a specific track directly to VibeMaster.');
-      try {
-        await openYouTubeMusicSearch(query);
-      } catch {
-        setError('Could not open YouTube Music. Check your internet connection or install a browser/YouTube Music app.');
-        Alert.alert('Search could not open', 'Check your internet connection or install a browser/YouTube Music app.');
-      }
+      setError('In-app search needs the YouTube Data API key in this build. Paste a YouTube video link or ID to add a specific track meanwhile.');
       return;
     }
     setLoading(true);
@@ -76,7 +69,7 @@ export default function Search() {
         <View style={s.introIcon}><Text style={s.introIconText}>♫</Text></View>
         <View style={{ flex: 1 }}>
           <Text style={s.introTitle}>Discover music. Share the queue.</Text>
-          <Text style={s.introSub}>Add tracks to a room, or open them in YouTube Music.</Text>
+          <Text style={s.introSub}>Search and add tracks directly to your room.</Text>
         </View>
       </View>
 
@@ -86,18 +79,6 @@ export default function Search() {
           <Text style={s.noticeText}>{error}</Text>
         </View>
       ) : null}
-      {!youtubeConfigured() && query.trim() && !parseYouTubeVideoId(query) ? (
-        <TouchableOpacity
-          style={s.externalSearch}
-          accessibilityRole="button"
-          onPress={() => void openYouTubeMusicSearch(query).catch(() =>
-            Alert.alert('Could not open YouTube Music', 'Check that a browser or YouTube Music is available.')
-          )}
-        >
-          <Text style={s.externalSearchText}>Search “{query.trim()}” in YouTube Music ↗</Text>
-        </TouchableOpacity>
-      ) : null}
-
       <ScrollView contentContainerStyle={s.results} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {loading ? <ActivityIndicator size="large" color="#bba0ff" style={s.loader} /> : null}
         {!loading ? results.map(item => <ResultCard key={item.id + item.kind} item={item} roomCode={params.roomCode} />) : null}
