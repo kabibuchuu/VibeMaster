@@ -6,6 +6,9 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MediaSourceFactory
+import androidx.media3.common.MediaItem
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -21,7 +24,28 @@ class VibeMasterPlaybackService : MediaSessionService() {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36")
             .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
-        val mediaSourceFactory = DefaultMediaSourceFactory(DefaultDataSource.Factory(this, httpFactory))
+        val fallbackFactory = DefaultMediaSourceFactory(DefaultDataSource.Factory(this, httpFactory))
+        val mediaSourceFactory = object : MediaSourceFactory by fallbackFactory {
+            override fun createMediaSource(mediaItem: MediaItem): MediaSource {
+                val extras = mediaItem.requestMetadata.extras
+                val headers = extras?.keySet()?.mapNotNull { key ->
+                    if (!key.startsWith("vibemaster.header.")) null
+                    else extras.getString(key)?.let { key.removePrefix("vibemaster.header.") to it }
+                }?.toMap().orEmpty()
+                val userAgent = headers.entries.firstOrNull { it.key.equals("User-Agent", ignoreCase = true) }?.value
+                    ?: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36"
+                val requestHeaders = linkedMapOf("Referer" to "https://www.youtube.com/")
+                headers.forEach { (key, value) ->
+                    if (!key.equals("User-Agent", ignoreCase = true)) requestHeaders[key] = value
+                }
+                val perItemHttpFactory = DefaultHttpDataSource.Factory()
+                    .setUserAgent(userAgent)
+                    .setDefaultRequestProperties(requestHeaders)
+                return DefaultMediaSourceFactory(
+                    DefaultDataSource.Factory(this@VibeMasterPlaybackService, perItemHttpFactory),
+                ).createMediaSource(mediaItem)
+            }
+        }
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
