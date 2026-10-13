@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { getPlaylistItems, searchYouTube, youtubeConfigured, type YouTubeResult } from '../src/lib/youtube';
-import { openInYouTubeMusic } from '../src/lib/youtubeMusic';
+import { getPlaylistItems, parseYouTubeVideoId, searchYouTube, youtubeConfigured, type YouTubeResult } from '../src/lib/youtube';
+import { openInYouTubeMusic, openYouTubeMusicSearch } from '../src/lib/youtubeMusic';
 import { addQueueItem, appendQueueItems } from '../src/lib/roomRepository';
 import type { QueueItem } from '../src/types/room';
 
@@ -15,7 +15,7 @@ export default function Search() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!youtubeConfigured()) setError('Add EXPO_PUBLIC_YOUTUBE_API_KEY to .env.local and restart Expo.');
+    if (!youtubeConfigured()) setError('No YouTube Data API key is configured. Paste a YouTube video link/ID to add it, or search in YouTube Music.');
   }, []);
 
   async function search() {
@@ -70,9 +70,20 @@ export default function Search() {
 
       {error ? (
         <View style={s.notice}>
-          <Text style={s.noticeTitle}>Search needs a quick fix</Text>
+          <Text style={s.noticeTitle}>{youtubeConfigured() ? 'Search unavailable' : 'Search fallback available'}</Text>
           <Text style={s.noticeText}>{error}</Text>
         </View>
+      ) : null}
+      {!youtubeConfigured() && query.trim() && !parseYouTubeVideoId(query) ? (
+        <TouchableOpacity
+          style={s.externalSearch}
+          accessibilityRole="button"
+          onPress={() => void openYouTubeMusicSearch(query).catch(() =>
+            Alert.alert('Could not open YouTube Music', 'Check that a browser or YouTube Music is available.')
+          )}
+        >
+          <Text style={s.externalSearchText}>Search “{query.trim()}” in YouTube Music ↗</Text>
+        </TouchableOpacity>
       ) : null}
 
       <ScrollView contentContainerStyle={s.results} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -185,6 +196,8 @@ const s = StyleSheet.create({
   notice: { backgroundColor: '#171128', borderWidth: 1, borderColor: '#4c2d83', padding: 14, borderRadius: 16 },
   noticeTitle: { color: '#fff', fontWeight: '800' },
   noticeText: { color: '#aaa3b6', marginTop: 5, lineHeight: 19, fontSize: 12 },
+  externalSearch: { marginTop: 10, marginBottom: 8, backgroundColor: '#182a20', borderWidth: 1, borderColor: '#315b42', borderRadius: 14, paddingVertical: 13, paddingHorizontal: 15 },
+  externalSearchText: { color: '#b8f0c9', fontWeight: '800', fontSize: 12 },
   results: { paddingBottom: 32, gap: 10 },
   loader: { marginTop: 34 },
   resultWrap: { gap: 5 },
