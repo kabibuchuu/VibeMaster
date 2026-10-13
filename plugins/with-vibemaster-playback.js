@@ -1,6 +1,5 @@
 const { withAndroidManifest, withSettingsGradle, withAppBuildGradle, withProjectBuildGradle } = require('@expo/config-plugins');
 
-
 function withVibeMasterKotlinCompiler(config) {
   return withProjectBuildGradle(config, (modConfig) => {
     let source = modConfig.modResults.contents;
@@ -12,30 +11,25 @@ function withVibeMasterKotlinCompiler(config) {
   });
 }
 
-function withVibeMasterMinSdk(config) {
+function withVibeMasterAndroidSdk(config) {
   return withAppBuildGradle(config, (modConfig) => {
     let source = modConfig.modResults.contents;
-    // Keep this setting in generated Gradle rather than app.json, whose Expo schema
-    // does not accept android.minSdkVersion on this SDK line.
-    source = source.replace(/minSdkVersion\s*(?:=\s*)?rootProject\.ext\.minSdkVersion/g, 'minSdkVersion 26');
-    if (!/minSdkVersion\s+26/.test(source)) {
-      source = source.replace(/defaultConfig\s*\{/, (match) => 'defaultConfig {\n        minSdkVersion 26');
+    source = source.replace(/compileSdkVersion\\s*(?:=\\s*)?rootProject\\.ext\\.compileSdkVersion/g, 'compileSdkVersion 37');
+    source = source.replace(/minSdkVersion\\s*(?:=\\s*)?rootProject\\.ext\\.minSdkVersion/g, 'minSdkVersion 26');
+    if (!/minSdkVersion\\s+26/.test(source)) {
+      source = source.replace(/defaultConfig\\s*\\{/, (match) => 'defaultConfig {\\n        minSdkVersion 26');
     }
-    modConfig.modResults.contents = source;
-    return modConfig;
+    return { ...modConfig, modResults: { ...modConfig.modResults, contents: source } };
   });
 }
 
 function withDebugAarMetadataDiagnostic(config) {
   return withAppBuildGradle(config, (modConfig) => {
-    // Diagnostic only: this CI runner does not currently expose Android API 37,
-    // while InnerTubeX's published AAR declares minCompileSdk 37. Skip the
-    // metadata preflight on debug so the Kotlin/API references can be tested.
-    // Release builds keep the normal metadata check; do not ship until a real
-    // API-37-capable toolchain builds the dependency without this diagnostic.
+    // Keep the debug-only workaround while CI and local debug builds use the
+    // same API-37 compile SDK as the InnerTubeX dependency.
     const marker = 'tasks.matching { it.name == "checkDebugAarMetadata" }.configureEach { enabled = false }';
     if (!modConfig.modResults.contents.includes(marker)) {
-      modConfig.modResults.contents += '\n// VibeMaster debug-only SDK metadata diagnostic\n' + marker + '\n';
+      modConfig.modResults.contents += '\\n// VibeMaster debug-only SDK metadata diagnostic\\n' + marker + '\\n';
     }
     return modConfig;
   });
@@ -45,39 +39,21 @@ function withJitPackRepository(config) {
   return withSettingsGradle(config, (modConfig) => {
     const source = modConfig.modResults.contents;
     if (source.includes('https://jitpack.io')) return modConfig;
-
-    // Expo's settings.gradle layout changes across SDK releases. Prefer the
-    // dependency repository block, but fall back to pluginManagement or a
-    // top-level repositories block rather than failing prebuild outright.
     const anchors = [
-      /(dependencyResolutionManagement\s*\{[\s\S]*?repositories\s*\{)/,
-      /(pluginManagement\s*\{[\s\S]*?repositories\s*\{)/,
+      /(dependencyResolutionManagement\\s*\\{[\\s\\S]*?repositories\\s*\\{)/,
+      /(pluginManagement\\s*\\{[\\s\\S]*?repositories\\s*\\{)/,
     ];
     const anchor = anchors.find((pattern) => pattern.test(source));
     if (anchor) {
-      modConfig.modResults.contents = source.replace(
-        anchor,
-        "$1\n        maven { url 'https://jitpack.io' }",
-      );
+      modConfig.modResults.contents = source.replace(anchor, "$1\\n        maven { url 'https://jitpack.io' }");
       return modConfig;
     }
-    const topLevelRepositories = /(^|\n)repositories\s*\{/;
+    const topLevelRepositories = /(^|\\n)repositories\\s*\\{/;
     if (topLevelRepositories.test(source)) {
-      modConfig.modResults.contents = source.replace(
-        topLevelRepositories,
-        "$1repositories {\n    maven { url 'https://jitpack.io' }",
-      );
+      modConfig.modResults.contents = source.replace(topLevelRepositories, "$1repositories {\\n    maven { url 'https://jitpack.io' }");
       return modConfig;
     }
-
-    // If Gradle's settings do not declare any repository block, append a
-    // dependency-resolution block. Existing Expo autolinking configuration
-    // remains untouched.
-    modConfig.modResults.contents = source +
-      "\ndependencyResolutionManagement {\n" +
-      "    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)\n" +
-      "    repositories { maven { url 'https://jitpack.io' }; google(); mavenCentral() }\n" +
-      "}\n";
+    modConfig.modResults.contents = source + "\\ndependencyResolutionManagement {\\n    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)\\n    repositories { maven { url 'https://jitpack.io' }; google(); mavenCentral() }\\n}\\n";
     return modConfig;
   });
 }
@@ -87,24 +63,16 @@ function withPlaybackService(config) {
     const manifest = modConfig.modResults.manifest;
     const app = manifest.application?.[0];
     if (!app) throw new Error('VibeMaster playback plugin: Android application manifest entry missing');
-
     app.service = app.service || [];
     const serviceName = 'com.vibemaster.player.VibeMasterPlaybackService';
-    const alreadyAdded = app.service.some(
-      (service) => service.$?.['android:name'] === serviceName,
-    );
-    if (!alreadyAdded) {
+    if (!app.service.some((service) => service.$?.['android:name'] === serviceName)) {
       app.service.push({
         $: {
           'android:name': serviceName,
           'android:exported': 'true',
           'android:foregroundServiceType': 'mediaPlayback',
         },
-        'intent-filter': [
-          {
-            action: [{ $: { 'android:name': 'androidx.media3.session.MediaSessionService' } }],
-          },
-        ],
+        'intent-filter': [{ action: [{ $: { 'android:name': 'androidx.media3.session.MediaSessionService' } }] }],
       });
     }
     return modConfig;
@@ -113,7 +81,7 @@ function withPlaybackService(config) {
 
 module.exports = function withVibeMasterPlayback(config) {
   config = withVibeMasterKotlinCompiler(config);
-  config = withVibeMasterMinSdk(config);
+  config = withVibeMasterAndroidSdk(config);
   config = withJitPackRepository(config);
   config = withDebugAarMetadataDiagnostic(config);
   config = withPlaybackService(config);
