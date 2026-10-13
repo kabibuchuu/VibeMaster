@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
+// @ts-expect-error This package is installed in voice-token-worker, not the app root.
 import { AccessToken } from "livekit-server-sdk";
 
 interface Env {
