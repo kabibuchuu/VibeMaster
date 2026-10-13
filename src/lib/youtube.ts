@@ -34,6 +34,43 @@ export function youtubeConfigured() {
   return Boolean(getKey());
 }
 
+export function parseYouTubeVideoId(input: string): string | null {
+  const value = input.trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(value)) return value;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\\./, '');
+    let candidate = '';
+    if (host === 'youtu.be') candidate = url.pathname.split('/').filter(Boolean)[0] ?? '';
+    else if (host.endsWith('youtube.com')) {
+      if (url.pathname === '/watch') candidate = url.searchParams.get('v') ?? '';
+      else {
+        const parts = url.pathname.split('/').filter(Boolean);
+        if (['shorts', 'embed', 'live'].includes(parts[0] ?? '')) candidate = parts[1] ?? '';
+      }
+    }
+    return /^[A-Za-z0-9_-]{11}$/.test(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveVideoLink(videoId: string): Promise<YouTubeResult> {
+  const watchUrl = 'https://www.youtube.com/watch?v=' + encodeURIComponent(videoId);
+  const response = await fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(watchUrl));
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data) {
+    throw new Error('That YouTube video could not be loaded. Check the link or try another track.');
+  }
+  return {
+    id: videoId,
+    title: typeof data.title === 'string' ? data.title : 'YouTube track',
+    channelTitle: typeof data.author_name === 'string' ? data.author_name : 'YouTube',
+    thumbnail: typeof data.thumbnail_url === 'string' ? data.thumbnail_url : '',
+    kind: 'music',
+  };
+}
+
 async function api(path: string, params: Record<string, string>) {
   const { key, ...query } = params;
   const response = await fetch(`${API_BASE}${path}?${new URLSearchParams(query).toString()}`, {
@@ -103,7 +140,11 @@ async function searchPlaylists(query: string, key: string): Promise<YouTubeResul
 /** Search the music catalogue. Video/watch-party results are deliberately excluded. */
 export async function searchYouTube(query: string): Promise<YouTubeResult[]> {
   const key = getKey();
-  if (!key) throw new Error('YouTube search is not configured. Add EXPO_PUBLIC_YOUTUBE_API_KEY to .env.local and restart Expo.');
+  if (!key) {
+    const videoId = parseYouTubeVideoId(query);
+    if (videoId) return [await resolveVideoLink(videoId)];
+    throw new Error('Add a YouTube Data API key for in-app search, or paste a YouTube video link/ID here to add a track.');
+  }
   const [tracks, playlists] = await Promise.all([
     searchMusicTracks(query, key),
     searchPlaylists(query, key),
