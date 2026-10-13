@@ -8,9 +8,9 @@ This branch is an in-progress reconstruction, not a release-ready app.
 
 - Music-only discovery and room-creation UI: implemented in this branch.
 - Room state, queue, participants, and text chat: existing Firebase/Firestore implementation.
-- Legacy room playback still uses the YouTube IFrame Player API in a WebView. A native Media3/ExoPlayer service and an InnerTubeX resolver have been added, with an in-room `NAT ▶` test action. **Native playback is experimental and has not yet passed an Android build or device test.**
+- Room playback supports the embedded YouTube IFrame player plus an experimental native Media3/ExoPlayer path. The native source resolver and background service are not release-verified; the current branch must not be represented as a verified audio-only/background release.
 - Voice chat: a LiveKit room screen and Firebase callable token issuer have now been added on this branch. This is implementation groundwork, not yet a verified end-to-end feature: install dependencies, deploy the function, configure LiveKit secrets, build a dev APK, and test with two physical devices.
-- The native Media3 playback path has not yet been validated by an Android Gradle build or physical-device test. Room synchronization still controls the legacy WebView player; native player state is not yet wired into shared-room reconciliation.
+- The room-sync layer now estimates a timestamped playhead and reconciles either selected engine, but native resolution and multi-device behavior still require a successful APK build and physical-device testing.
 
 Do not describe this branch as delivering audio-only playback or voice chat until those systems are implemented and tested on real Android devices.
 
@@ -19,7 +19,7 @@ Do not describe this branch as delivering audio-only playback or voice chat unti
 - React Native + Expo + TypeScript / Expo Router
 - Firebase Authentication + Cloud Firestore
 - YouTube Data API v3 for discovery
-- YouTube IFrame Player API in `react-native-webview` as the legacy room player; native Media3/ExoPlayer service and GPL-3.0 InnerTubeX resolver are now experimental additions
+- YouTube IFrame Player API in `react-native-webview`; experimental Media3/ExoPlayer service with an InnerTubeX resolver
 - Expo Audio configured for background-capable native audio, LiveKit React Native for voice, Expo Screen Orientation and React Native Community Slider
 
 ## Experimental native playback path
@@ -50,9 +50,9 @@ npx eas-cli build --platform android --profile development
 
 Install the resulting APK on the Android device. A development build is different from Expo Go and is required once native modules are added.
 
-## Local Expo setup (current legacy path)
+## Local Expo setup
 
-Create `.env.local` from `.env.example` and set:
+For full in-app catalogue search, create `.env.local` from `.env.example` and set:
 
 ```text
 EXPO_PUBLIC_YOUTUBE_API_KEY=your_key_here
@@ -116,4 +116,4 @@ The callable only mints a token for an authenticated user who already has a part
 - The official YouTube API does not provide an ordinary third-party audio-only stream endpoint. If native background playback is a hard requirement, obtain explicit written authorization for a YouTube integration or use a separately licensed audio provider.
 - Firebase configuration/authentication must be validated in the target environment.
 - Voice chat requires a LiveKit project and deployment of the Firebase callable. It has not been built or verified on physical devices in this change.
-- The catalog returns stable YouTube video IDs. The native resolver only gets a temporary playable audio URI at playback time; it does not store it in Firestore. External YouTube Music handoff remains uncontrollable, and native playback is not yet synchronized across room participants.
+- When no YouTube Data API key is configured, users can still paste a YouTube video URL or ID to add a single track (metadata is resolved through YouTube's oEmbed endpoint), or search in YouTube Music and open results externally. Full in-app catalogue and playlist search requires the API key. The native resolver only gets a temporary playable audio URI at playback time; it does not store it in Firestore. External YouTube Music handoff remains uncontrollable, and native playback still needs Android build and multi-device validation.
