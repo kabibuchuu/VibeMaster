@@ -300,6 +300,28 @@ export default function RoomScreen() {
   }, [room?.playbackEngine]);
 
   useEffect(() => {
+    if (!roomCode) {
+      setError('Room code is missing. Go back and create or join a room again.');
+      setRoomLoaded(true);
+      return;
+    }
+    setRoomLoaded(false);
+    return watchRoom(
+      roomCode,
+      nextRoom => {
+        setRoom(nextRoom);
+        setRoomLoaded(true);
+        if (!nextRoom) setError('Room not found. Check the code or create a new room.');
+        else setError('');
+      },
+      e => {
+        setError(e.message || 'Could not load this room. Check your connection and Firebase permissions.');
+        setRoomLoaded(true);
+      },
+    );
+  }, [roomCode]);
+
+  useEffect(() => {
     if (!roomCode) return;
     return watchParticipants(roomCode, setPeople, e => setError(e.message));
   }, [roomCode]);
