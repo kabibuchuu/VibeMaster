@@ -27,3 +27,7 @@ ios/Pods/
 .flutter-plugins-dependencies
 .packages
 build/
+
+# Firebase Functions build output
+functions/lib/
+functions/node_modules/

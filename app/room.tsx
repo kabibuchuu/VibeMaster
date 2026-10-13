@@ -17,7 +17,6 @@ import {
   View,
   StatusBar,
 } from 'react-native';
-import * as Brightness from 'expo-brightness';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -36,11 +35,16 @@ import {
   sendMessage,
   setCurrentItem,
   updatePlayback,
+  updateRoom,
+  setPlaybackEngine,
+  estimateRoomPositionSeconds,
   watchMessages,
   watchParticipants,
   watchRoom,
 } from '../src/lib/roomRepository';
 import { getPlaylistItems, searchYouTube, type YouTubeResult } from '../src/lib/youtube';
+import { openInYouTubeMusic } from '../src/lib/youtubeMusic';
+import { nativePlayback, type NativePlaybackEvent } from '../src/lib/nativePlayback';
 import type { Participant, QueueItem, Room, RoomMessage } from '../src/types/room';
 
 type PlayerMessage =
@@ -77,7 +81,7 @@ function playerHtml(videoId: string) {
     'function onYouTubeIframeAPIReady(){',
     'vmPlayer=new YT.Player("player",{',
     'width:"100%",height:"100%",videoId:"' + safeId + '",',
-    'playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,fs:0,iv_load_policy:3,enablejsapi:1,origin:"' + APP_ORIGIN + '",widget_referrer:"' + APP_REFERRER + '"},',
+    'playerVars:{playsinline:1,controls:1,disablekb:0,rel:0,fs:0,iv_load_policy:3,enablejsapi:1,origin:"' + APP_ORIGIN + '",widget_referrer:"' + APP_REFERRER + '"},',
     'events:{',
     'onReady:function(){send({type:"ready"});setInterval(function(){if(vmPlayer){send({type:"progress",position:Number(vmPlayer.getCurrentTime()||0),duration:Number(vmPlayer.getDuration()||0)});}},500);},',
     'onError:function(e){send({type:"error",code:e.data});},',
@@ -106,7 +110,7 @@ export default function RoomScreen() {
     title?: string;
     channel?: string;
     thumbnail?: string;
-    kind?: 'music' | 'video';
+    kind?: 'music';
     duration?: string;
   }>();
 
@@ -137,30 +141,183 @@ export default function RoomScreen() {
   const [addingRecommendation, setAddingRecommendation] = useState<string | null>(null);
   const endedItemRef = useRef('');
   const [volume, setVolume] = useState(1);
-  const [brightness, setBrightness] = useState(0.7);
+  const [nativePlaybackActive, setNativePlaybackActive] = useState(false);
+  const [nativePlaybackBusy, setNativePlaybackBusy] = useState(false);
+  const [nativePlaybackStatus, setNativePlaybackStatus] = useState('');
+  const [nativePlaybackPosition, setNativePlaybackPosition] = useState(0);
+  const [nativePlaybackDuration, setNativePlaybackDuration] = useState(0);
   const playerRef = useRef<WebView>(null);
-  const originalBrightnessRef = useRef<number | null>(null);
   const addedRef = useRef('');
   const isHost = room?.hostId === auth.currentUser?.uid;
   const canControl = Boolean(isHost || (auth.currentUser?.uid && room?.controllerIds?.includes(auth.currentUser.uid)));
   const me = people.find(person => person.id === auth.currentUser?.uid);
   const joined = Boolean(me);
   const current = room?.queue?.find(item => item.id === room.currentItemId) ?? room?.queue?.[0];
+  const currentItemRef = useRef(current);
+  currentItemRef.current = current;
+  const nativeTrackItemRef = useRef('');
+  const nativeFailedItemRef = useRef('');
+  const nativeSyncInFlightRef = useRef(false);
+  const displayedPosition = room?.playbackEngine === 'native' ? nativePlaybackPosition : playerPosition;
+  const displayedDuration = room?.playbackEngine === 'native' ? nativePlaybackDuration : playerDuration;
   const queuedVideoIds = (room?.queue ?? []).map(item => item.videoId || item.id).join('|');
 
   useEffect(() => {
+    const subscription = nativePlayback.addPlaybackListener((event: NativePlaybackEvent) => {
+      if (typeof event.isPlaying === 'boolean') {
+        setNativePlaybackStatus(event.isPlaying ? 'Playing via native player' : 'Native player paused');
+      }
+      if (typeof event.positionMs === 'number') setNativePlaybackPosition(event.positionMs / 1000);
+      if (typeof event.durationMs === 'number') setNativePlaybackDuration(event.durationMs / 1000);
+
+      if (event.playbackState === 4 && canControl && isHost && current) {
+        if (endedItemRef.current === current.id) return;
+        endedItemRef.current = current.id;
+        const queue = room?.queue ?? [];
+        const index = queue.findIndex(item => item.id === current.id);
+        const next = index >= 0 ? queue[index + 1] : undefined;
+        if (next) {
+          void setCurrentItem(roomCode, next.id, 'playing', 0).catch(e =>
+            setError(e instanceof Error ? e.message : 'Could not advance the native room queue.'),
+          );
+        } else {
+          void publish('paused', (event.positionMs ?? 0) / 1000);
+        }
+      }
+    });
+    return () => subscription.remove();
+  }, [canControl, current?.id, isHost, room?.queue, roomCode]);
+
+  async function playCurrentNatively(publishRoomEngine = true) {
+    const selected = current;
+    if (!selected || nativePlaybackBusy || (publishRoomEngine && !canControl)) return;
+    setNativePlaybackBusy(true);
+    setNativePlaybackStatus('Resolving audio stream…');
+    try {
+      const stream = await nativePlayback.resolveTrack(selected.videoId);
+      if (currentItemRef.current?.id !== selected.id) {
+        setNativePlaybackStatus('Room track changed during stream resolution. Retrying the current track.');
+        return;
+      }
+
+      // Pause the embedded player before switching this device to native audio.
+      playerRef.current?.injectJavaScript('try{if(window.vmPlayer){window.vmPlayer.pauseVideo();}}catch(e){};true;');
+      await nativePlayback.play({
+        uri: stream.url,
+        title: selected.title,
+        artist: selected.channelTitle,
+        mimeType: stream.mimeType,
+        headers: stream.headers,
+      });
+      nativeTrackItemRef.current = selected.id;
+      nativeFailedItemRef.current = '';
+      setNativePlaybackActive(true);
+      setNativePlaybackStatus('Native audio playing');
+      const state = await nativePlayback.getState();
+      setNativePlaybackPosition(state.positionMs / 1000);
+      setNativePlaybackDuration(state.durationMs / 1000);
+
+      // The host/controller changes the shared engine only after this device
+      // successfully resolves and starts the track. Other members then resolve
+      // the same stable video ID locally; short-lived URLs never enter Firestore.
+      if (publishRoomEngine) {
+        await setPlaybackEngine(roomCode, 'native', {
+          status: 'playing',
+          position: 0,
+          currentItemId: selected.id,
+        });
+      }
+    } catch (e) {
+      nativeFailedItemRef.current = selected.id;
+      nativeTrackItemRef.current = '';
+      setNativePlaybackActive(false);
+      setNativePlaybackStatus(e instanceof Error ? e.message : 'Native playback could not start.');
+      if (publishRoomEngine) {
+        Alert.alert(
+          'Native playback failed',
+          e instanceof Error ? e.message : 'No playable audio stream was returned. Try another track.',
+        );
+      } else {
+        setError(e instanceof Error ? e.message : 'A participant could not resolve this track for native playback.');
+      }
+    } finally {
+      setNativePlaybackBusy(false);
+    }
+  }
+
+  async function switchRoomToEmbeddedPlayer() {
+    if (!canControl) return;
+    try {
+      await setPlaybackEngine(roomCode, 'iframe');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not switch the room back to the embedded player.');
+    }
+  }
+
+  useEffect(() => {
+    if (room?.playbackEngine === 'native') {
+      if (
+        current &&
+        nativeTrackItemRef.current !== current.id &&
+        nativeFailedItemRef.current !== current.id &&
+        !nativePlaybackBusy
+      ) {
+        void playCurrentNatively(false);
+      }
+      return;
+    }
+
+    if (nativePlaybackActive) {
+      nativeTrackItemRef.current = '';
+      void nativePlayback.pause().catch(() => {});
+      setNativePlaybackActive(false);
+      setNativePlaybackStatus('Using embedded player');
+    }
+  }, [room?.playbackEngine, current?.id, nativePlaybackActive, nativePlaybackBusy]);
+
+  // Refresh the visible native playhead more smoothly than the 3-second room
+  // reconciliation loop; this is display-only and does not publish room writes.
+  useEffect(() => {
+    if (room?.playbackEngine !== 'native') return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const state = await nativePlayback.getState();
+        if (!active) return;
+        setNativePlaybackPosition(state.positionMs / 1000);
+        setNativePlaybackDuration(state.durationMs / 1000);
+      } catch {
+        // Resolution/startup errors are surfaced by playCurrentNatively; do not
+        // replace the user's useful error with a transient idle-state read.
+      }
+    };
+    void poll();
+    const timer = setInterval(() => { void poll(); }, 750);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [room?.playbackEngine]);
+
+  useEffect(() => {
     if (!roomCode) {
+      setError('Room code is missing. Go back and create or join a room again.');
       setRoomLoaded(true);
       return;
     }
+    setRoomLoaded(false);
     return watchRoom(
       roomCode,
-      value => {
-        setRoom(value);
+      nextRoom => {
+        setRoom(nextRoom);
         setRoomLoaded(true);
-        if (!value) setError('Room not found. Check the code and try again.');
+        if (!nextRoom) setError('Room not found. Check the code or create a new room.');
+        else setError('');
       },
-      e => setError(e.message),
+      e => {
+        setError(e.message || 'Could not load this room. Check your connection and Firebase permissions.');
+        setRoomLoaded(true);
+      },
     );
   }, [roomCode]);
 
@@ -204,17 +361,17 @@ export default function RoomScreen() {
       const item: QueueItem = {
         id: String(videoId),
         videoId: String(videoId),
-        title: String(title ?? 'Selected video'),
+        title: String(title ?? 'Selected track'),
         channelTitle: String(channel ?? 'YouTube'),
         thumbnail: String(thumbnail ?? ''),
         duration: duration ? String(duration) : undefined,
-        kind: kind === 'music' ? 'music' : 'video',
+        kind: 'music',
       };
       void addQueueItem(roomCode, item)
         .then(() => {
           if (!room.currentItemId) return setCurrentItem(roomCode, item.id);
         })
-        .catch(e => setError(e instanceof Error ? e.message : 'Could not add video.'));
+        .catch(e => setError(e instanceof Error ? e.message : 'Could not add track.'));
     }
   }, [
     room,
@@ -237,7 +394,7 @@ export default function RoomScreen() {
     let cancelled = false;
     setRecommendationsLoading(true);
     const query = [current.title, current.channelTitle].filter(Boolean).join(' ');
-    void searchYouTube(query, current.kind === 'music' ? 'music' : 'video')
+    void searchYouTube(query)
       .then(items => {
         if (cancelled) return;
         setRecommendations(items.filter(item => item.kind !== 'playlist' && item.id !== current.videoId).slice(0, 10));
@@ -252,23 +409,12 @@ export default function RoomScreen() {
     setPlayerReady(false);
     setPlayerError(null);
     setAutoplayBlocked(false);
-  }, [current?.id]);
+  }, [current?.id, room?.playbackEngine]);
 
   useEffect(() => {
-    let mounted = true;
-    void Brightness.getBrightnessAsync().then(value => {
-      if (mounted) {
-        originalBrightnessRef.current = value;
-        setBrightness(value);
-      }
-    }).catch(() => {});
     return () => {
-      mounted = false;
       StatusBar.setHidden(false, 'none');
       void ScreenOrientation.unlockAsync().catch(() => {});
-      if (originalBrightnessRef.current != null) {
-        void Brightness.setBrightnessAsync(originalBrightnessRef.current).catch(() => {});
-      }
     };
   }, []);
 
@@ -307,14 +453,37 @@ export default function RoomScreen() {
   }
 
   const syncPlayer = () => {
-    const activeRef = playerRef;
-    if (!room || !current || !playerReady) return;
-    const playbackAnchor = room.playbackUpdatedAt ?? room.updatedAt;
-    const elapsed = room.status === 'playing'
-      ? Math.max(0, (Date.now() - playbackAnchor) / 1000)
-      : 0;
-    const target = Math.max(0, room.position + elapsed);
+    if (!room || !current) return;
+    const targetMs = Math.max(0, estimateRoomPositionSeconds(room) * 1000);
+
+    if (room.playbackEngine === 'native') {
+      if (nativeSyncInFlightRef.current || !nativeTrackItemRef.current) return;
+      nativeSyncInFlightRef.current = true;
+      void nativePlayback.getState()
+        .then(async state => {
+          const target = targetMs;
+          const drift = Math.abs(state.positionMs - target);
+          if (drift > DRIFT_TOLERANCE_SECONDS * 1000) {
+            await nativePlayback.seekTo(target);
+          }
+          if (room.status === 'playing' && !state.isPlaying) {
+            await nativePlayback.resume();
+          } else if (room.status !== 'playing' && state.isPlaying) {
+            await nativePlayback.pause();
+          }
+          setNativePlaybackPosition((drift > DRIFT_TOLERANCE_SECONDS * 1000 ? target : state.positionMs) / 1000);
+          setNativePlaybackDuration(state.durationMs / 1000);
+        })
+        .catch(error => {
+          setNativePlaybackStatus(error instanceof Error ? error.message : 'Native player state unavailable.');
+        })
+        .finally(() => { nativeSyncInFlightRef.current = false; });
+      return;
+    }
+
+    if (!playerReady) return;
     const desiredState = room.status === 'playing' ? 1 : 2;
+    const target = targetMs / 1000;
     const script = [
       'if(window.vmPlayer){',
       'var now=Number(window.vmPlayer.getCurrentTime()||0);',
@@ -324,22 +493,22 @@ export default function RoomScreen() {
       'if(state!==' + desiredState + '){' + (desiredState === 1 ? 'window.vmPlayer.playVideo();' : 'window.vmPlayer.pauseVideo();') + '}',
       '}true;',
     ].join('');
-    activeRef.current?.injectJavaScript(script);
+    playerRef.current?.injectJavaScript(script);
   };
 
   useEffect(() => {
-    if (!room || !current || !playerReady) return;
+    if (!room || !current || (room.playbackEngine !== 'native' && !playerReady)) return;
     syncPlayer();
     const timer = setInterval(syncPlayer, 3000);
     return () => clearInterval(timer);
-  }, [room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id, playerReady, fullScreen, canControl]);
+  }, [room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, room?.playbackEngine, current?.id, playerReady, nativePlaybackActive, fullScreen, canControl]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') syncPlayer();
     });
     return () => subscription.remove();
-  }, [fullScreen, playerReady, room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, current?.id]);
+  }, [fullScreen, playerReady, room?.version, room?.status, room?.position, room?.playbackUpdatedAt, room?.updatedAt, room?.playbackEngine, current?.id]);
 
   async function publish(status: Room['status'], position: number) {
     if (!current || !canControl) return;
@@ -409,8 +578,17 @@ export default function RoomScreen() {
   async function togglePlayback() {
     if (!canControl || !current) return;
     const nextStatus: Room['status'] = room?.status === 'playing' ? 'paused' : 'playing';
-    await publish(nextStatus, playerPosition);
-    command(nextStatus === 'playing' ? 'playVideo();' : 'pauseVideo();');
+    await publish(nextStatus, displayedPosition);
+    if (room?.playbackEngine === 'native') {
+      try {
+        if (nextStatus === 'playing') await nativePlayback.resume();
+        else await nativePlayback.pause();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not control native playback.');
+      }
+    } else {
+      command(nextStatus === 'playing' ? 'playVideo();' : 'pauseVideo();');
+    }
   }
 
   function command(script: string) {
@@ -424,26 +602,39 @@ export default function RoomScreen() {
     const next = Math.max(0, Math.min(1, value));
     setVolume(next);
     setMuted(next === 0);
+    if (room?.playbackEngine === 'native') {
+      void nativePlayback.setVolume(next).catch(e =>
+        setError(e instanceof Error ? e.message : 'Could not set native volume.'),
+      );
+      return;
+    }
     command('setVolume(' + Math.round(next * 100) + ');');
     if (next > 0) command('unMute();');
-  }
-
-  function setScreenBrightness(value: number) {
-    const next = Math.max(0.05, Math.min(1, value));
-    setBrightness(next);
-    void Brightness.setBrightnessAsync(next).catch(() => {});
   }
 
   function toggleMute() {
     const nextMuted = !muted;
     setMuted(nextMuted);
+    if (room?.playbackEngine === 'native') {
+      void nativePlayback.setVolume(nextMuted ? 0 : (volume === 0 ? 0.8 : volume)).catch(e =>
+        setError(e instanceof Error ? e.message : 'Could not mute native playback.'),
+      );
+      if (!nextMuted && volume === 0) setVolume(0.8);
+      return;
+    }
     command(nextMuted ? 'mute();' : 'unMute();');
     if (!nextMuted && volume === 0) setPlayerVolume(0.8);
   }
 
   function seekToPosition(position: number) {
-    if (!playerReady || !playerDuration || !canControl) return;
-    const target = Math.max(0, Math.min(playerDuration, position));
+    if ((room?.playbackEngine !== 'native' && !playerReady) || !displayedDuration || !canControl) return;
+    const target = Math.max(0, Math.min(displayedDuration, position));
+    if (room?.playbackEngine === 'native') {
+      void nativePlayback.seekTo(Math.round(target * 1000))
+        .then(() => publish(room.status === 'playing' ? 'playing' : 'paused', target))
+        .catch(e => setError(e instanceof Error ? e.message : 'Could not seek native playback.'));
+      return;
+    }
     const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){window.vmPlayer.seekTo(' + target + ',true);window.ReactNativeWebView.postMessage(JSON.stringify({type:"seek",position:' + target + '}));}true;'
@@ -451,8 +642,8 @@ export default function RoomScreen() {
   }
 
   function seekToFraction(fraction: number) {
-    if (!playerDuration) return;
-    seekToPosition(playerDuration * Math.max(0, Math.min(1, fraction)));
+    if (!displayedDuration) return;
+    seekToPosition(displayedDuration * Math.max(0, Math.min(1, fraction)));
   }
 
   function formatTime(seconds: number) {
@@ -464,6 +655,13 @@ export default function RoomScreen() {
 
   function seek(delta: number) {
     if (!canControl) return;
+    if (room?.playbackEngine === 'native') {
+      const target = Math.max(0, Math.min(displayedDuration || Number.MAX_SAFE_INTEGER, displayedPosition + delta));
+      void nativePlayback.seekTo(Math.round(target * 1000))
+        .then(() => publish(room.status === 'playing' ? 'playing' : 'paused', target))
+        .catch(e => setError(e instanceof Error ? e.message : 'Could not seek native playback.'));
+      return;
+    }
     const activeRef = playerRef;
     activeRef.current?.injectJavaScript(
       'if(window.vmPlayer){' +
@@ -485,7 +683,7 @@ export default function RoomScreen() {
         channelTitle: item.channelTitle,
         thumbnail: item.thumbnail,
         duration: item.duration,
-        kind: item.kind === 'music' ? 'music' : 'video',
+        kind: 'music',
       });
       setRecommendations(previous => previous.filter(result => result.id !== item.id));
     } catch (e) {
@@ -506,7 +704,7 @@ export default function RoomScreen() {
         channelTitle: item.channelTitle,
         thumbnail: item.thumbnail,
         duration: item.duration,
-        kind: item.kind === 'music' ? 'music' : 'video',
+        kind: 'music',
       });
       await setCurrentItem(roomCode, item.id, 'playing', 0);
       setRecommendations(previous => previous.filter(result => result.id !== item.id));
@@ -582,7 +780,7 @@ export default function RoomScreen() {
         channelTitle: fallback.channelTitle,
         thumbnail: fallback.thumbnail,
         duration: fallback.duration,
-        kind: fallback.kind === 'music' ? 'music' : 'video',
+        kind: 'music',
       });
       await setCurrentItem(roomCode, fallback.id, 'playing', 0);
       setRecommendations(previous => previous.filter(item => item.id !== fallback.id));
@@ -691,7 +889,7 @@ export default function RoomScreen() {
   }
 
   const status = room.status === 'playing' ? 'LIVE' : 'PAUSED';
-  const playerErrorText = playerError ? PLAYER_ERROR_TEXT[playerError] ?? 'YouTube could not play this video.' : '';
+  const playerErrorText = playerError ? PLAYER_ERROR_TEXT[playerError] ?? 'YouTube could not play this track.' : '';
 
   return (
     <SafeAreaView style={s.safe} edges={fullScreen ? [] : ['top', 'bottom']}>
@@ -704,6 +902,14 @@ export default function RoomScreen() {
           <Text style={s.kicker}>{room.mode.toUpperCase()} ROOM</Text>
           <Text style={s.title}>{roomCode}</Text>
         </View>
+        <TouchableOpacity
+          style={[s.people, { marginRight: 8 }]}
+          onPress={() => router.push({ pathname: '/voice', params: { code: roomCode, name: name || 'Guest' } })}
+          accessibilityRole="button"
+          accessibilityLabel="Join voice chat"
+        >
+          <Text style={s.peopleText}>♫ Voice</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={s.people} onPress={() => (isHost ? setManageOpen(true) : void shareRoom())}>
           <Text style={s.peopleText}>● {people.length}</Text>
         </TouchableOpacity>
@@ -711,11 +917,19 @@ export default function RoomScreen() {
 
       {current ? (
         <View style={[s.player, fullScreen && s.fullscreenVideo]}>
-          {current ? (
+          {current && room?.playbackEngine === 'native' ? (
+            <View style={[s.emptyPlayer, { gap: 12 }]}>
+              <Image source={{ uri: current.thumbnail }} style={{ width: 142, height: 142, borderRadius: 18 }} />
+              <Text style={s.emptyPlayerText}>NATIVE AUDIO</Text>
+              <Text style={{ color: '#c4b5fd', fontSize: 12, textAlign: 'center' }}>
+                {nativePlaybackStatus || 'Synchronizing native playback…'}
+              </Text>
+            </View>
+          ) : current ? (
             <WebView
               key={current.id + '-inline'}
               ref={playerRef}
-              pointerEvents="none"
+              pointerEvents="auto"
               source={{ html, baseUrl: APP_REFERRER }}
               originWhitelist={['*']}
               javaScriptEnabled
@@ -745,14 +959,36 @@ export default function RoomScreen() {
         </View>
       ) : null}
 
+      <ScrollView style={s.roomScroll} contentContainerStyle={s.roomScrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       {current ? (
         <View style={s.playerControlPanel}>
           <View style={s.playerIdentityRow}>
             <View style={{ flex: 1 }}>
-              <Text style={s.playerEyebrow}>{room.mode === 'music' ? 'MUSIC' : 'VIDEO'} · {status}</Text>
+              <Text style={s.playerEyebrow}>MUSIC · {status}</Text>
               <Text numberOfLines={1} style={s.playerTitle}>{current.title}</Text>
               <Text numberOfLines={1} style={s.playerChannel}>{current.channelTitle}</Text>
             </View>
+            <TouchableOpacity
+              style={[s.iconButton, { width: 60 }, room?.playbackEngine === 'native' && { borderColor: '#a78bfa', borderWidth: 1 }]}
+              disabled={nativePlaybackBusy || !canControl}
+              onPress={() => void (room?.playbackEngine === 'native' ? switchRoomToEmbeddedPlayer() : playCurrentNatively(true))}
+              accessibilityRole="button"
+              accessibilityLabel={room?.playbackEngine === 'native' ? 'Switch room to embedded player' : 'Switch room to native audio'}
+            >
+              <Text style={[s.iconButtonText, { fontSize: 10 }]}>
+                {nativePlaybackBusy ? '…' : room?.playbackEngine === 'native' ? (canControl ? 'WEB ↩' : 'NATIVE') : 'NAT ▶'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.iconButton, { width: 76 }]}
+              onPress={() => void openInYouTubeMusic({ kind: 'music', id: current.videoId }).catch(() =>
+                Alert.alert('Could not open YouTube Music', 'Open YouTube Music on your device and try again.')
+              )}
+              accessibilityRole="button"
+              accessibilityLabel="Open current track in YouTube Music"
+            >
+              <Text style={[s.iconButtonText, { fontSize: 10 }]}>YTM ↗</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={s.iconButton} onPress={() => setSettingsOpen(value => !value)}>
               <Text style={s.iconButtonText}>⚙</Text>
             </TouchableOpacity>
@@ -761,18 +997,26 @@ export default function RoomScreen() {
             </TouchableOpacity>
           </View>
 
+          {nativePlaybackStatus ? (
+            <View style={{ paddingHorizontal: 4, paddingBottom: 8 }}>
+              <Text style={{ color: room?.playbackEngine === 'native' ? '#c4b5fd' : '#fca5a5', fontSize: 11 }}>
+                {nativePlaybackStatus}
+                {room?.playbackEngine === 'native' ? ' · ' + formatTime(nativePlaybackPosition) + ' / ' + formatTime(nativePlaybackDuration) : ''}
+              </Text>
+            </View>
+          ) : null}
           <View style={s.scrubWrap}>
             <Slider
-              value={isSeeking ? scrubPosition : playerPosition}
+              value={isSeeking ? scrubPosition : displayedPosition}
               minimumValue={0}
-              maximumValue={Math.max(1, playerDuration)}
-              disabled={!canControl || !playerDuration}
+              maximumValue={Math.max(1, displayedDuration)}
+              disabled={!canControl || !displayedDuration}
               minimumTrackTintColor="#a78bfa"
               maximumTrackTintColor="#302b38"
               thumbTintColor="#c4b5fd"
               onSlidingStart={() => {
                 setIsSeeking(true);
-                setScrubPosition(playerPosition);
+                setScrubPosition(displayedPosition);
               }}
               onValueChange={value => setScrubPosition(value)}
               onSlidingComplete={value => {
@@ -784,29 +1028,29 @@ export default function RoomScreen() {
           </View>
 
           <View style={s.playerTimeRow}>
-            <Text style={s.playerTime}>{formatTime(playerPosition)} / {formatTime(playerDuration)}</Text>
+            <Text style={s.playerTime}>{formatTime(displayedPosition)} / {formatTime(displayedDuration)}</Text>
             <Text style={s.playerAccess}>{canControl ? 'PLAYBACK ACCESS' : 'SYNCED'}</Text>
           </View>
 
           {canControl ? (
             <View style={s.compactControls}>
-              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(-1)} disabled={room?.playbackEngine !== 'native' && !playerReady}>
                 <Text style={s.compactControlText}>⏮</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(-10)} disabled={room?.playbackEngine !== 'native' && !playerReady}>
                 <Text style={s.compactControlText}>↶</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.mainPlay, (!playerReady) && s.disabled]}
+                style={[s.mainPlay, (room?.playbackEngine !== 'native' && !playerReady) && s.disabled]}
                 onPress={() => void togglePlayback()}
-                disabled={(!playerReady) || !current}
+                disabled={(room?.playbackEngine !== 'native' && !playerReady) || !current}
               >
                 <Text style={s.mainPlayText}>{room.status === 'playing' ? 'Ⅱ' : '▶'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => seek(10)} disabled={room?.playbackEngine !== 'native' && !playerReady}>
                 <Text style={s.compactControlText}>↷</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={!playerReady}>
+              <TouchableOpacity style={s.compactControl} onPress={() => void changeTrack(1)} disabled={room?.playbackEngine !== 'native' && !playerReady}>
                 <Text style={s.compactControlText}>⏭</Text>
               </TouchableOpacity>
             </View>
@@ -827,23 +1071,6 @@ export default function RoomScreen() {
                 thumbTintColor="#a78bfa"
                 onValueChange={setPlayerVolume}
               />
-              {current.kind === 'video' ? (
-                <>
-                  <View style={s.settingRow}>
-                    <Text style={s.settingLabel}>Brightness</Text>
-                    <Text style={s.settingValue}>{Math.round(brightness * 100)}%</Text>
-                  </View>
-                  <Slider
-                    value={brightness}
-                    minimumValue={0.05}
-                    maximumValue={1}
-                    minimumTrackTintColor="#a78bfa"
-                    maximumTrackTintColor="#3a3544"
-                    thumbTintColor="#a78bfa"
-                    onValueChange={setScreenBrightness}
-                  />
-                </>
-              ) : null}
               <View style={s.settingButtons}>
                 <TouchableOpacity style={s.settingButton} onPress={toggleMute}>
                   <Text style={s.settingButtonText}>{muted ? 'Unmute' : 'Mute'}</Text>
@@ -1003,7 +1230,7 @@ export default function RoomScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={s.queue} keyboardShouldPersistTaps="handled">
+      <View style={s.queue}>
         {room.queue.filter(item => item.id !== current?.id).map((item, index) => (
           <View key={item.id} style={[s.queueItem, item.id === current?.id && s.currentQueueItem]}>
             <TouchableOpacity style={s.queueMain} onPress={() => void selectItem(item)} disabled={!canControl}>
@@ -1031,7 +1258,7 @@ export default function RoomScreen() {
           </View>
         ))}
         {!room.queue.length ? (
-          <Text style={s.empty}>Add a song or video to build the queue.</Text>
+          <Text style={s.empty}>Add a song or playlist to build the queue.</Text>
         ) : null}
 
         {!isHost && joined ? (
@@ -1039,6 +1266,7 @@ export default function RoomScreen() {
             <Text style={s.leaveText}>Leave room</Text>
           </TouchableOpacity>
         ) : null}
+      </View>
       </ScrollView>
 
       {fullScreen && Boolean(current) ? (
@@ -1112,15 +1340,6 @@ export default function RoomScreen() {
                   <Text style={s.settingValue}>{Math.round(volume * 100)}%</Text>
                 </View>
                 <Slider value={volume} minimumValue={0} maximumValue={1} minimumTrackTintColor="#a78bfa" maximumTrackTintColor="#3a3544" thumbTintColor="#a78bfa" onValueChange={setPlayerVolume} />
-                {current?.kind === 'video' ? (
-                  <>
-                    <View style={s.settingRow}>
-                      <Text style={s.settingLabel}>Brightness</Text>
-                      <Text style={s.settingValue}>{Math.round(brightness * 100)}%</Text>
-                    </View>
-                    <Slider value={brightness} minimumValue={0.05} maximumValue={1} minimumTrackTintColor="#a78bfa" maximumTrackTintColor="#3a3544" thumbTintColor="#a78bfa" onValueChange={setScreenBrightness} />
-                  </>
-                ) : null}
                 <TouchableOpacity style={s.settingButton} onPress={toggleMute}>
                   <Text style={s.settingButtonText}>{muted ? 'Unmute' : 'Mute'}</Text>
                 </TouchableOpacity>
@@ -1225,6 +1444,8 @@ export default function RoomScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#08070d' },
   c: { flex: 1, backgroundColor: '#08070d', paddingHorizontal: 16 },
+  roomScroll: { flex: 1 },
+  roomScrollContent: { paddingBottom: 32 },
   center: { flex: 1, backgroundColor: '#08070d', alignItems: 'center', justifyContent: 'center', padding: 24 },
   big: { color: '#fff', fontSize: 26, fontWeight: '900' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingTop: 3 },

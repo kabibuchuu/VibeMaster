@@ -45,7 +45,7 @@ function cleanQueue(items: QueueItem[]) {
   return items.map(cleanQueueItem);
 }
 
-export async function createRoom(code: string, hostId: string, mode: RoomMode = 'mixed') {
+export async function createRoom(code: string, hostId: string, mode: RoomMode = 'music') {
   const ref = roomRef(code);
   await runTransaction(db, async transaction => {
     const snapshot = await transaction.get(ref);
@@ -54,10 +54,13 @@ export async function createRoom(code: string, hostId: string, mode: RoomMode = 
       hostId,
       mode,
       status: 'waiting',
+      playbackEngine: 'iframe',
       currentItemId: '',
       queue: [],
       position: 0,
       playbackUpdatedAt: serverTimestamp(),
+      playbackRevision: 0,
+      playbackStartedAt: null,
       ...touch(),
       createdAt: serverTimestamp(),
     });
@@ -96,12 +99,119 @@ export async function setController(code: string, userId: string, enabled: boole
   });
 }
 
+
+/**
+ * Publish an authoritative room playback anchor. The host/controller should be
+ * the only caller; each transaction increments playbackRevision so clients can
+ * ignore stale snapshots. Position is milliseconds.
+ */
+export async function publishPlaybackAnchor(
+  code: string,
+  data: {
+    status: Room['status'];
+    currentItemId: string;
+    position: number;
+    playbackRevision?: number;
+    playbackStartedAt?: number;
+  },
+) {
+  const ref = roomRef(code);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists()) throw new Error('ROOM_NOT_FOUND');
+    const currentRevision = typeof snapshot.data().playbackRevision === 'number'
+      ? snapshot.data().playbackRevision as number
+      : 0;
+    const nextRevision = Math.max(currentRevision + 1, data.playbackRevision ?? 0);
+    transaction.update(ref, {
+      status: data.status,
+      currentItemId: data.currentItemId,
+      position: Math.max(0, data.position),
+      playbackRevision: nextRevision,
+      playbackStartedAt: data.status === 'playing'
+        ? (data.playbackStartedAt ?? Date.now())
+        : null,
+      playbackUpdatedAt: serverTimestamp(),
+      ...touch(),
+    });
+  });
+}
+
+/**
+ * Estimate the current room playhead in seconds from its latest timestamp
+ * anchor. The helper is source-agnostic; every participant still resolves the
+ * same stable room item ID through their local playback provider.
+ */
+export function estimateRoomPositionSeconds(
+  room: Pick<Room, 'status' | 'position' | 'playbackUpdatedAt'>,
+  nowMs = Date.now(),
+) {
+  const anchor = Math.max(0, room.position);
+  if (room.status !== 'playing') return anchor;
+  const updatedAt = room.playbackUpdatedAt ?? nowMs;
+  return anchor + Math.max(0, (nowMs - updatedAt) / 1000);
+}
+
+/**
+ * Write a coherent timestamped playback command, incrementing a revision
+ * transactionally so devices can discard stale snapshots.
+ */
+
+/**
+ * Atomically choose the room playback engine and publish the authoritative
+ * playhead anchor. Used by the host/controller after native stream resolution
+ * succeeds, so subscribers never observe a native engine with stale waiting
+ * state or an unrelated timestamp.
+ */
+export async function setPlaybackEngine(
+  code: string,
+  engine: NonNullable<Room['playbackEngine']>,
+  anchor?: Pick<Room, 'status' | 'position' | 'currentItemId'>,
+) {
+  const ref = roomRef(code);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists()) throw new Error('ROOM_NOT_FOUND');
+    const room = snapshot.data();
+    const previous = typeof room.playbackRevision === 'number' ? room.playbackRevision : 0;
+    const now = Date.now();
+    const update: Record<string, unknown> = {
+      playbackEngine: engine,
+      playbackRevision: previous + 1,
+      playbackUpdatedAt: serverTimestamp(),
+      ...touch(),
+    };
+    if (anchor) {
+      update.status = anchor.status;
+      update.position = Math.max(0, anchor.position);
+      update.currentItemId = anchor.currentItemId;
+      update.playbackStartedAt = anchor.status === 'playing' ? now : null;
+    }
+    transaction.update(ref, update);
+  });
+}
+
 export async function updatePlayback(
   code: string,
   data: Pick<Room, 'status' | 'position' | 'currentItemId'>,
 ) {
-  await updateRoom(code, data);
+  const ref = roomRef(code);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists()) throw new Error('ROOM_NOT_FOUND');
+    const room = snapshot.data();
+    const previous = typeof room.playbackRevision === 'number' ? room.playbackRevision : 0;
+    transaction.update(ref, {
+      ...data,
+      position: Math.max(0, data.position),
+      playbackRevision: previous + 1,
+      playbackStartedAt: data.status === 'playing' ? Date.now() : null,
+      playbackUpdatedAt: serverTimestamp(),
+      ...touch(),
+    });
+  });
 }
+
 
 export async function addQueueItem(code: string, item: QueueItem) {
   await appendQueueItems(code, [item]);
@@ -131,6 +241,8 @@ export async function appendQueueItems(code: string, items: QueueItem[]) {
       update.currentItemId = queue[0].id;
       update.status = 'paused';
       update.position = 0;
+      update.playbackRevision = (typeof snapshot.data().playbackRevision === 'number' ? snapshot.data().playbackRevision : 0) + 1;
+      update.playbackStartedAt = null;
       update.playbackUpdatedAt = serverTimestamp();
     }
     transaction.update(ref, update);
@@ -249,6 +361,8 @@ function normalizeRoom(code: string, data: Record<string, unknown>): Room {
     currentItemId: typeof data.currentItemId === 'string' ? data.currentItemId : '',
     position: typeof data.position === 'number' ? Math.max(0, data.position) : 0,
     version: typeof data.version === 'number' ? data.version : 0,
+    playbackRevision: typeof data.playbackRevision === 'number' ? data.playbackRevision : 0,
+    playbackStartedAt: typeof data.playbackStartedAt === 'number' ? data.playbackStartedAt : null,
     controllerIds: Array.isArray(data.controllerIds) ? (data.controllerIds as string[]) : [],
   };
 }

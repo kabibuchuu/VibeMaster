@@ -23,14 +23,17 @@ service cloud.firestore {
 
     function validRoom(data) {
       return data.hostId is string
-        && data.mode in ['music', 'video', 'mixed']
+        && data.mode == 'music'
         && data.status in ['waiting', 'playing', 'paused']
         && data.currentItemId is string
         && data.position is number
         && data.position >= 0
         && data.queue is list
         && data.queue.size() <= 50
-        && (!data.keys().hasAny(['controllerIds']) || (data.controllerIds is list && data.controllerIds.size() <= 50));
+        && (!data.keys().hasAny(['controllerIds']) || (data.controllerIds is list && data.controllerIds.size() <= 50))
+        && (!data.keys().hasAny(['playbackEngine']) || data.playbackEngine in ['iframe', 'native'])
+        && (!data.keys().hasAny(['playbackRevision']) || (data.playbackRevision is number && data.playbackRevision >= 0))
+        && (!data.keys().hasAny(['playbackStartedAt']) || data.playbackStartedAt == null || data.playbackStartedAt is number);
     }
 
     match /rooms/{roomId} {
@@ -49,7 +52,7 @@ service cloud.firestore {
         && request.resource.data.mode == resource.data.mode
         && validRoom(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'playbackUpdatedAt', 'version', 'controllerIds'
+          'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'playbackUpdatedAt', 'playbackRevision', 'playbackStartedAt', 'playbackEngine', 'version', 'controllerIds'
         ])
       ) || (
         isController(roomId)
@@ -58,7 +61,7 @@ service cloud.firestore {
         && request.resource.data.controllerIds == resource.data.controllerIds
         && validRoom(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'playbackUpdatedAt', 'version'
+          'status', 'currentItemId', 'queue', 'position', 'updatedAt', 'playbackUpdatedAt', 'playbackRevision', 'playbackStartedAt', 'playbackEngine', 'version'
         ])
       );
 

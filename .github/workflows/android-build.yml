@@ -1,0 +1,58 @@
+name: Android native build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - feat/music-first-reconstruction
+  workflow_dispatch:
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_YOUTUBE_API_KEY: ${{ secrets.EXPO_PUBLIC_YOUTUBE_API_KEY }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Install JavaScript dependencies
+        run: npm ci
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --clean
+      - name: Print generated Gradle configuration
+        run: |
+          echo '--- android/settings.gradle ---'
+          cat android/settings.gradle
+          echo '--- android/build.gradle ---'
+          cat android/build.gradle
+      - name: Assemble standalone release APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+      - name: Verify JavaScript bundle is packaged
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          unzip -l "$APK" | grep -E 'assets/index\.android\.bundle|lib/.*/libhermes\.so' 
+          unzip -l "$APK" | grep -q 'assets/index.android.bundle'
+      - name: Upload standalone release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibeMaster-standalone-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14

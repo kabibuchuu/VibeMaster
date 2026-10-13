@@ -2,42 +2,214 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { getPlaylistItems, searchYouTube, youtubeConfigured, type YouTubeResult } from '../src/lib/youtube';
+import { getPlaylistItems, parseYouTubeVideoId, searchYouTube, youtubeConfigured, type YouTubeResult } from '../src/lib/youtube';
+import { openInYouTubeMusic } from '../src/lib/youtubeMusic';
 import { addQueueItem, appendQueueItems } from '../src/lib/roomRepository';
 import type { QueueItem } from '../src/types/room';
 
-export default function Search(){
-  const params=useLocalSearchParams<{kind?:'music'|'video'|'all';roomCode?:string}>();
-  const [query,setQuery]=useState('');const [kind,setKind]=useState<'music'|'video'|'all'>(params.kind??'all');const [results,setResults]=useState<YouTubeResult[]>([]);const [loading,setLoading]=useState(false);const [error,setError]=useState('');
-  useEffect(()=>{if(!youtubeConfigured())setError('Add EXPO_PUBLIC_YOUTUBE_API_KEY to .env.local and restart Expo.');},[]);
-  async function search(){if(!query.trim())return;setLoading(true);setError('');try{setResults(await searchYouTube(query.trim(),kind));}catch(e){setError(e instanceof Error?e.message:'Search failed.');}finally{setLoading(false);}}
-  return <SafeAreaView style={s.c} edges={['top','bottom']}><View style={s.header}><TouchableOpacity onPress={()=>router.back()}><Text style={s.back}>‹</Text></TouchableOpacity><View style={{flex:1}}><Text style={s.kicker}>DISCOVER</Text><Text style={s.title}>Find your vibe</Text></View></View><View style={s.search}><Text style={s.mag}>⌕</Text><TextInput autoFocus value={query} onChangeText={setQuery} onSubmitEditing={search} placeholder="Search songs, artists, videos, playlists..." placeholderTextColor="#6f6c78" style={s.input} returnKeyType="search"/><TouchableOpacity onPress={search} disabled={loading}><Text style={s.go}>{loading?'…':'Go'}</Text></TouchableOpacity></View><View style={s.tabs}>{(['all','music','video'] as const).map(x=><TouchableOpacity key={x} style={[s.tab,kind===x&&s.tabOn]} onPress={()=>{setKind(x);setResults([]);setError(youtubeConfigured()?'':'Add EXPO_PUBLIC_YOUTUBE_API_KEY to .env.local and restart Expo.')}}><Text style={[s.tabText,kind===x&&s.tabTextOn]}>{x==='all'?'Everything':x==='music'?'🎵 Music':'🎬 Videos'}</Text></TouchableOpacity>)}</View>{error?<View style={s.notice}><Text style={s.noticeTitle}>Search setup</Text><Text style={s.noticeText}>{error}</Text></View>:null}<ScrollView contentContainerStyle={s.list}>{loading?<ActivityIndicator size="large"/>:results.map(item=><ResultCard key={item.id+item.kind} item={item} roomCode={params.roomCode}/>) }{!loading&&!results.length&&!error?<Text style={s.empty}>Search for a song, artist, video or playlist.</Text>:null}</ScrollView></SafeAreaView>;
-}
-function ResultCard({item,roomCode}:{item:YouTubeResult;roomCode?:string}){
-  const [adding,setAdding]=useState(false);
-  async function selectResult(){
-    if(!roomCode){
-      router.push({pathname:'/create',params:{videoId:item.kind==='playlist'?'':item.id,playlistId:item.playlistId??'',title:item.title,channel:item.channelTitle,thumbnail:item.thumbnail,kind:item.kind}} as any);
+export default function Search() {
+  const params = useLocalSearchParams<{ roomCode?: string }>();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<YouTubeResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!youtubeConfigured()) setError('In-app text search is not configured yet. Add the YouTube Data API key to the Android build to search songs and artists here. You can still paste a YouTube video link or ID.');
+  }, []);
+
+  async function search() {
+    if (!query.trim() || loading) return;
+    // Do not silently send search queries out of VibeMaster when the API key is missing.
+    if (!youtubeConfigured() && !parseYouTubeVideoId(query)) {
+      setError('In-app search needs the YouTube Data API key in this build. Paste a YouTube video link or ID to add a specific track meanwhile.');
       return;
     }
-    if(adding)return;
+    setLoading(true);
+    setError('');
+    try {
+      setResults(await searchYouTube(query.trim()));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Search failed. Try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backButton} accessibilityRole="button" accessibilityLabel="Go back">
+          <Text style={s.back}>‹</Text>
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={s.kicker}>MUSIC DISCOVERY</Text>
+          <Text style={s.title}>Find your next vibe</Text>
+        </View>
+      </View>
+
+      <View style={s.searchBox}>
+        <Text style={s.searchGlyph}>⌕</Text>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          onSubmitEditing={() => void search()}
+          placeholder="Songs, artists, albums, playlists..."
+          placeholderTextColor="#777184"
+          style={s.input}
+          returnKeyType="search"
+          accessibilityLabel="Search music"
+        />
+        <TouchableOpacity onPress={() => void search()} disabled={loading || !query.trim()} style={[s.searchButton, (loading || !query.trim()) && s.disabled]}>
+          <Text style={s.searchButtonText}>{loading ? '…' : 'Search'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={s.introRow}>
+        <View style={s.introIcon}><Text style={s.introIconText}>♫</Text></View>
+        <View style={{ flex: 1 }}>
+          <Text style={s.introTitle}>Discover music. Share the queue.</Text>
+          <Text style={s.introSub}>Search and add tracks directly to your room.</Text>
+        </View>
+      </View>
+
+      {error ? (
+        <View style={s.notice}>
+          <Text style={s.noticeTitle}>{youtubeConfigured() ? 'Search unavailable' : 'Search fallback available'}</Text>
+          <Text style={s.noticeText}>{error}</Text>
+        </View>
+      ) : null}
+      <ScrollView contentContainerStyle={s.results} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {loading ? <ActivityIndicator size="large" color="#bba0ff" style={s.loader} /> : null}
+        {!loading ? results.map(item => <ResultCard key={item.id + item.kind} item={item} roomCode={params.roomCode} />) : null}
+        {!loading && !results.length && !error ? (
+          <View style={s.emptyState}>
+            <View style={s.emptyGlyph}><Text style={s.emptyGlyphText}>♫</Text></View>
+            <Text style={s.emptyTitle}>{query.trim() ? 'No matches yet' : 'What are we listening to?'}</Text>
+            <Text style={s.emptyBody}>{query.trim() ? 'Try another song, artist, or playlist name.' : 'Search for a track or playlist to start your shared soundtrack.'}</Text>
+          </View>
+        ) : null}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function ResultCard({ item, roomCode }: { item: YouTubeResult; roomCode?: string }) {
+  const [adding, setAdding] = useState(false);
+
+  async function selectResult() {
+    if (!roomCode) {
+      router.push({
+        pathname: '/create',
+        params: {
+          videoId: item.kind === 'playlist' ? '' : item.id,
+          playlistId: item.playlistId ?? '',
+          title: item.title,
+          channel: item.channelTitle,
+          thumbnail: item.thumbnail,
+          kind: item.kind,
+          duration: item.duration ?? '',
+        },
+      });
+      return;
+    }
+    if (adding) return;
     setAdding(true);
-    try{
-      if(item.kind==='playlist'){
-        const items=await getPlaylistItems(item.playlistId??item.id);
-        if(!items.length)throw new Error('No playable videos were found in this playlist.');
-        await appendQueueItems(roomCode,items);
-      }else{
-        const queueItem:QueueItem={id:item.id,videoId:item.id,title:item.title,channelTitle:item.channelTitle,thumbnail:item.thumbnail,duration:item.duration,kind:item.kind};
-        await addQueueItem(roomCode,queueItem);
+    try {
+      if (item.kind === 'playlist') {
+        const queue = await getPlaylistItems(item.playlistId ?? item.id);
+        if (!queue.length) throw new Error('This playlist has no available tracks.');
+        await appendQueueItems(roomCode, queue);
+      } else {
+        const track: QueueItem = {
+          id: item.id,
+          videoId: item.id,
+          title: item.title,
+          channelTitle: item.channelTitle,
+          thumbnail: item.thumbnail,
+          duration: item.duration,
+          kind: 'music',
+        };
+        await addQueueItem(roomCode, track);
       }
       router.back();
-    }catch(e){
-      Alert.alert('Could not add to queue',e instanceof Error?e.message:'Please try again.');
-    }finally{
+    } catch (e) {
+      Alert.alert('Could not add music', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
       setAdding(false);
     }
   }
-  return <TouchableOpacity style={s.card} onPress={()=>void selectResult()} disabled={adding}><Image source={{uri:item.thumbnail}} style={s.thumb}/><View style={s.meta}><View style={s.badgeRow}><Text style={s.type}>{item.kind==='playlist'?'PLAYLIST':item.kind==='music'?'MUSIC':'VIDEO'}</Text>{item.duration?<Text style={s.duration}>{item.duration}</Text>:null}</View><Text numberOfLines={2} style={s.cardTitle}>{item.title}</Text><Text numberOfLines={1} style={s.channel}>{adding?'Adding to queue…':item.channelTitle}</Text></View><Text style={s.plus}>{adding?'…':item.kind==='playlist'?'›':'＋'}</Text></TouchableOpacity>;
+
+  return (
+    <View style={s.resultWrap}>
+      <TouchableOpacity style={s.resultCard} onPress={() => void selectResult()} disabled={adding} activeOpacity={0.8}>
+        <View style={s.coverWrap}>
+          <Image source={{ uri: item.thumbnail }} style={s.cover} />
+          <View style={s.coverIcon}><Text style={s.coverIconText}>{item.kind === 'playlist' ? '≡' : '♫'}</Text></View>
+        </View>
+        <View style={s.resultMeta}>
+          <Text style={s.resultType}>{item.kind === 'playlist' ? 'YOUTUBE PLAYLIST' : 'YOUTUBE TRACK'}{item.duration ? '  ·  ' + item.duration : ''}</Text>
+          <Text numberOfLines={2} style={s.resultTitle}>{item.title}</Text>
+          <Text numberOfLines={1} style={s.resultSubtitle}>{adding ? 'Adding to your room…' : item.channelTitle}</Text>
+        </View>
+        <View style={s.addCircle}><Text style={s.addGlyph}>{adding ? '…' : item.kind === 'playlist' ? '›' : '+'}</Text></View>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={s.youtubeMusicButton}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${item.title} in YouTube Music`}
+        onPress={() => void openInYouTubeMusic({ kind: item.kind, id: item.playlistId ?? item.id }).catch(() =>
+          Alert.alert('Could not open YouTube Music', 'Open YouTube Music on your device and try again.')
+        )}
+      >
+        <Text style={s.youtubeMusicButtonText}>▶ Open in YouTube Music</Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
-const s=StyleSheet.create({c:{flex:1,backgroundColor:'#08070d',paddingHorizontal:18,paddingTop:10},header:{flexDirection:'row',alignItems:'center',marginTop:8,marginBottom:20},back:{color:'#fff',fontSize:38,marginRight:10,lineHeight:38},kicker:{color:'#a78bfa',fontSize:9,fontWeight:'900',letterSpacing:2.2},title:{color:'#fff',fontSize:30,fontWeight:'900',marginTop:4,letterSpacing:-.7},search:{height:60,backgroundColor:'#171522',borderRadius:18,borderWidth:1,borderColor:'#4a3a62',flexDirection:'row',alignItems:'center',paddingHorizontal:14,shadowColor:'#8b5cf6',shadowOpacity:.08,shadowRadius:12,shadowOffset:{width:0,height:4},elevation:2},mag:{fontSize:25,color:'#a78bfa',marginRight:8},input:{flex:1,color:'#fff',fontSize:15},go:{color:'#c4b5fd',fontWeight:'900',backgroundColor:'#302047',overflow:'hidden',paddingHorizontal:12,paddingVertical:9,borderRadius:10},tabs:{flexDirection:'row',gap:8,marginTop:14,marginBottom:20},tab:{paddingHorizontal:16,paddingVertical:10,borderRadius:999,backgroundColor:'#15131d',borderWidth:1,borderColor:'#292536'},tabOn:{backgroundColor:'#382363',borderColor:'#7250aa'},tabText:{color:'#777481',fontWeight:'700'},tabTextOn:{color:'#ddd0ff'},notice:{backgroundColor:'#171128',borderWidth:1,borderColor:'#4c2d83',padding:14,borderRadius:16},noticeTitle:{color:'#fff',fontWeight:'800'},noticeText:{color:'#aaa3b6',marginTop:5,lineHeight:19},list:{paddingBottom:30,gap:10},empty:{color:'#91889e',textAlign:'center',marginTop:60,lineHeight:21,paddingHorizontal:20,fontSize:13},card:{flexDirection:'row',alignItems:'center',backgroundColor:'#13111b',borderRadius:18,padding:9,borderWidth:1,borderColor:'#30283d',minHeight:96},thumb:{width:118,height:76,borderRadius:12,backgroundColor:'#201d27'},meta:{flex:1,paddingHorizontal:11},badgeRow:{flexDirection:'row',gap:8,alignItems:'center'},type:{color:'#a78bfa',fontSize:9,fontWeight:'900',letterSpacing:1},duration:{color:'#65616d',fontSize:10},cardTitle:{color:'#fff',fontSize:14,fontWeight:'800',lineHeight:19,marginTop:5},channel:{color:'#908c99',fontSize:12,marginTop:4},plus:{color:'#c4b5fd',fontSize:27,paddingHorizontal:8}});
+
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#08070d', paddingHorizontal: 20, paddingTop: 8 },
+  header: { flexDirection: 'row', alignItems: 'center', marginTop: 5, marginBottom: 18 },
+  backButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#17131f', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  back: { color: '#f3eaff', fontSize: 34, lineHeight: 36, marginTop: -2 },
+  kicker: { color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 2.2 },
+  title: { color: '#fff', fontSize: 27, lineHeight: 33, fontWeight: '900', marginTop: 3, letterSpacing: -0.7 },
+  searchBox: { minHeight: 58, backgroundColor: '#171522', borderRadius: 18, borderWidth: 1, borderColor: '#483760', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13 },
+  searchGlyph: { fontSize: 26, color: '#bba0ff', marginRight: 8 },
+  input: { flex: 1, minWidth: 0, color: '#fff', fontSize: 14, paddingVertical: 13 },
+  searchButton: { backgroundColor: '#8b5cf6', paddingHorizontal: 13, paddingVertical: 10, borderRadius: 12, marginLeft: 8 },
+  searchButtonText: { color: '#fff', fontWeight: '900', fontSize: 11 },
+  disabled: { opacity: 0.45 },
+  introRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 17, paddingHorizontal: 3 },
+  introIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#211630', alignItems: 'center', justifyContent: 'center' },
+  introIconText: { color: '#d7c2ff', fontSize: 25, fontWeight: '900' },
+  introTitle: { color: '#f6f0ff', fontSize: 13, fontWeight: '900' },
+  introSub: { color: '#92899f', fontSize: 11, lineHeight: 16, marginTop: 4 },
+  notice: { backgroundColor: '#171128', borderWidth: 1, borderColor: '#4c2d83', padding: 14, borderRadius: 16 },
+  noticeTitle: { color: '#fff', fontWeight: '800' },
+  noticeText: { color: '#aaa3b6', marginTop: 5, lineHeight: 19, fontSize: 12 },
+  externalSearch: { marginTop: 10, marginBottom: 8, backgroundColor: '#182a20', borderWidth: 1, borderColor: '#315b42', borderRadius: 14, paddingVertical: 13, paddingHorizontal: 15 },
+  externalSearchText: { color: '#b8f0c9', fontWeight: '800', fontSize: 12 },
+  results: { paddingBottom: 32, gap: 10 },
+  loader: { marginTop: 34 },
+  resultWrap: { gap: 5 },
+  youtubeMusicButton: { alignSelf: 'flex-end', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: '#182a20', borderWidth: 1, borderColor: '#315b42' },
+  youtubeMusicButtonText: { color: '#b8f0c9', fontSize: 10, fontWeight: '800' },
+  resultCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#13111b', borderRadius: 18, padding: 9, borderWidth: 1, borderColor: '#30283d', minHeight: 92 },
+  coverWrap: { width: 76, height: 76, position: 'relative' },
+  cover: { width: 76, height: 76, borderRadius: 12, backgroundColor: '#201d27' },
+  coverIcon: { position: 'absolute', right: 4, bottom: 4, backgroundColor: 'rgba(9,8,15,0.8)', width: 25, height: 25, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  coverIconText: { color: '#e2d0ff', fontSize: 15, fontWeight: '900' },
+  resultMeta: { flex: 1, paddingHorizontal: 11, paddingVertical: 3 },
+  resultType: { color: '#a78bfa', fontSize: 8, fontWeight: '900', letterSpacing: 1.2 },
+  resultTitle: { color: '#fff', fontSize: 13, fontWeight: '800', lineHeight: 18, marginTop: 5 },
+  resultSubtitle: { color: '#908c99', fontSize: 11, marginTop: 4 },
+  addCircle: { width: 32, height: 32, borderRadius: 12, backgroundColor: '#211831', alignItems: 'center', justifyContent: 'center' },
+  addGlyph: { color: '#d3bfff', fontSize: 23, fontWeight: '700', marginTop: -1 },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingTop: 58, paddingBottom: 38 },
+  emptyGlyph: { width: 68, height: 68, borderRadius: 22, backgroundColor: '#1a1227', alignItems: 'center', justifyContent: 'center', marginBottom: 17 },
+  emptyGlyphText: { color: '#cbb3ff', fontSize: 33 },
+  emptyTitle: { color: '#fff', fontSize: 17, fontWeight: '900', textAlign: 'center' },
+  emptyBody: { color: '#938a9e', fontSize: 12, lineHeight: 19, textAlign: 'center', marginTop: 8 },
+});

@@ -8,10 +8,18 @@
     "scheme": "vibemaster",
     "android": {
       "package": "com.vibemaster.app",
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "./plugins/with-vibemaster-playback",
+      "@livekit/react-native-expo-plugin"
     ]
   }
 }
