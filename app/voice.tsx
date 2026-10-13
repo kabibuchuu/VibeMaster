@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { AudioSession, LiveKitRoom, useLocalParticipant } from '@livekit/react-native';
-import { httpsCallable } from 'firebase/functions';
 import { auth, firebaseApp } from '../firebase';
-import { getFunctions } from 'firebase/functions';
 
 type VoiceTokenResponse = { serverUrl: string; token: string };
 
-const functions = getFunctions(firebaseApp);
+const voiceTokenUrl = process.env.EXPO_PUBLIC_VOICE_TOKEN_URL?.trim();
 
 function Controls({ onLeave }: { onLeave: () => void }) {
   const { localParticipant, isMicrophoneEnabled } = useLocalParticipant();
@@ -63,12 +61,31 @@ export default function VoiceScreen() {
       }
       try {
         await AudioSession.startAudioSession();
-        const issueToken = httpsCallable<{ roomCode: string; participantName: string }, VoiceTokenResponse>(functions, 'createVoiceToken');
-        const result = await issueToken({
-          roomCode,
-          participantName: String(name ?? 'Guest').slice(0, 40),
+        if (!voiceTokenUrl) {
+          throw new Error(
+            'Voice service is not configured yet. Deploy the free Cloudflare Worker in voice-token-worker and set EXPO_PUBLIC_VOICE_TOKEN_URL to its URL.',
+          );
+        }
+        const idToken = await auth.currentUser.getIdToken();
+        const response = await fetch(voiceTokenUrl, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${idToken}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            roomCode,
+            participantName: String(name ?? 'Guest').slice(0, 40),
+          }),
         });
-        if (!cancelled) setTokenData(result.data);
+        const payload = await response.json() as VoiceTokenResponse & { error?: string };
+        if (!response.ok) {
+          throw new Error(payload.error || `Voice service returned HTTP ${response.status}.`);
+        }
+        if (!payload.serverUrl || !payload.token) {
+          throw new Error('Voice service returned an invalid token response.');
+        }
+        if (!cancelled) setTokenData(payload);
       } catch (cause) {
         if (!cancelled) {
           setError(cause instanceof Error ? cause.message : 'Could not join voice. Check that the voice-token function is deployed and LiveKit is configured.');
@@ -96,7 +113,7 @@ export default function VoiceScreen() {
       <Text style={styles.title}>Voice room {roomCode}</Text>
       <Text style={styles.description}>Talk with everyone listening together. Your microphone starts enabled when you join; mute it any time.</Text>
       {!tokenData && !error ? <View style={styles.loading}><ActivityIndicator color="#c4b5fd" /><Text style={styles.muted}>Connecting securely…</Text></View> : null}
-      {error ? <View style={styles.errorPanel}><Text style={styles.errorTitle}>Could not connect</Text><Text style={styles.errorText}>{error}</Text><Text style={styles.hint}>Deploy the Firebase voice-token function and set LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET in Firebase Functions secrets/configuration.</Text><TouchableOpacity style={styles.button} onPress={() => router.back()}><Text style={styles.buttonText}>Return to room</Text></TouchableOpacity></View> : null}
+      {error ? <View style={styles.errorPanel}><Text style={styles.errorTitle}>Could not connect</Text><Text style={styles.errorText}>{error}</Text><Text style={styles.hint}>Voice tokens are issued by a separate free backend. Configure EXPO_PUBLIC_VOICE_TOKEN_URL in the build and keep LiveKit credentials only in that backend's secrets.</Text><TouchableOpacity style={styles.button} onPress={() => router.back()}><Text style={styles.buttonText}>Return to room</Text></TouchableOpacity></View> : null}
       {tokenData ? (
         <LiveKitRoom
           serverUrl={tokenData.serverUrl}
