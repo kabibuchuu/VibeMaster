@@ -23,7 +23,7 @@ class VibeMasterPlayerModule : Module() {
         Name("VibeMasterPlayer")
         Events("playbackStateChanged")
 
-        AsyncFunction("resolveTrack") { videoId: String ->
+        AsyncFunction("resolveTrack") Coroutine { videoId: String ->
             val context = requireNotNull(appContext.reactContext) {
                 "React context is not available"
             }
