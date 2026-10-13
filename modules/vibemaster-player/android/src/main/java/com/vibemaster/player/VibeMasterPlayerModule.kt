@@ -2,6 +2,8 @@ package com.vibemaster.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.net.Uri
+import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -40,7 +42,7 @@ class VibeMasterPlayerModule : Module() {
         AsyncFunction("play") { uri: String, title: String, artist: String, mimeType: String?, headers: Map<String, String>? ->
             val context = requireNotNull(appContext.reactContext) { "React context is not available" }
             val player = getController()
-            val item = createMediaItem(uri, title, artist, mimeType)
+            val item = createMediaItem(uri, title, artist, mimeType, headers.orEmpty())
             player.setMediaItem(item)
             player.prepare()
             player.play()
@@ -56,7 +58,7 @@ class VibeMasterPlayerModule : Module() {
                 val artist = track["artist"] as? String ?: ""
                 val mimeType = track["mimeType"] as? String
                 val headers = stringMap(track["headers"])
-                createMediaItem(uri, title, artist, mimeType)
+                createMediaItem(uri, title, artist, mimeType, headers)
             }
             val player = getController()
             val safeIndex = startIndex.coerceIn(0, sources.lastIndex)
@@ -113,10 +115,19 @@ class VibeMasterPlayerModule : Module() {
         title: String,
         artist: String,
         mimeType: String?,
+        headers: Map<String, String>,
     ): MediaItem {
         val metadata = MediaMetadata.Builder().setTitle(title).setArtist(artist).build()
         val builder = MediaItem.Builder().setUri(uri).setMediaMetadata(metadata)
         if (!mimeType.isNullOrBlank()) builder.setMimeType(mimeType)
+        val extras = Bundle().apply {
+            headers.forEach { (name, value) -> putString("vibemaster.header.$name", value) }
+        }
+        val requestMetadata = MediaItem.RequestMetadata.Builder()
+            .setMediaUri(Uri.parse(uri))
+            .setExtras(extras)
+            .build()
+        builder.setRequestMetadata(requestMetadata)
         return builder.build()
     }
 
