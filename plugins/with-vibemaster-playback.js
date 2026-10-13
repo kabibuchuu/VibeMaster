@@ -14,7 +14,6 @@ function withVibeMasterKotlinCompiler(config) {
 function withVibeMasterAndroidSdk(config) {
   return withAppBuildGradle(config, (modConfig) => {
     let source = modConfig.modResults.contents;
-    source = source.replace(/compileSdkVersion\s*(?:=\s*)?rootProject\.ext\.compileSdkVersion/g, 'compileSdkVersion 37');
     source = source.replace(/minSdkVersion\s*(?:=\s*)?rootProject\.ext\.minSdkVersion/g, 'minSdkVersion 26');
     if (!/minSdkVersion\s+26/.test(source)) {
       source = source.replace(/defaultConfig\s*\{/, (match) => 'defaultConfig {\n        minSdkVersion 26');
