@@ -236,24 +236,14 @@ export default function RoomScreen() {
       // usable by falling back to the embedded YouTube player instead of
       // trapping the listener behind a native playback error dialog.
       if (publishRoomEngine) {
-        const message = e instanceof Error ? e.message : 'Native audio could not start.';
         setNativePlaybackStatus('Native audio unavailable; continuing with the embedded player.');
         playerRef.current?.injectJavaScript(
           'try{if(window.vmPlayer){window.vmPlayer.playVideo();}}catch(e){};true;',
         );
-        try {
-          await setPlaybackEngine(roomCode, 'iframe', {
-            status: 'playing',
-            position: 0,
-            currentItemId: selected.id,
-          });
-        } catch (fallbackError) {
-          setError(
-            fallbackError instanceof Error
-              ? `Playback fallback started, but room sync failed: ${fallbackError.message}`
-              : `Playback fallback started, but room sync failed. Original error: ${message}`,
-          );
-        }
+        // The shared engine is only switched to native after native playback
+        // has started successfully. If startup fails, Firestore already remains
+        // on the embedded engine, so don't issue another write that could mask
+        // the playback fallback with a permissions error.
       } else {
         setNativePlaybackStatus('Native audio unavailable on this device.');
       }
