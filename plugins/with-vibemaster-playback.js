@@ -1,4 +1,16 @@
-const { withAndroidManifest, withSettingsGradle, withAppBuildGradle } = require('@expo/config-plugins');
+const { withAndroidManifest, withSettingsGradle, withAppBuildGradle, withProjectBuildGradle } = require('@expo/config-plugins');
+
+
+function withVibeMasterKotlinCompiler(config) {
+  return withProjectBuildGradle(config, (modConfig) => {
+    let source = modConfig.modResults.contents;
+    const from = "classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')";
+    const to = "classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10')";
+    if (source.includes(from)) source = source.replace(from, to);
+    modConfig.modResults.contents = source;
+    return modConfig;
+  });
+}
 
 function withVibeMasterMinSdk(config) {
   return withAppBuildGradle(config, (modConfig) => {
@@ -100,6 +112,7 @@ function withPlaybackService(config) {
 }
 
 module.exports = function withVibeMasterPlayback(config) {
+  config = withVibeMasterKotlinCompiler(config);
   config = withVibeMasterMinSdk(config);
   config = withJitPackRepository(config);
   config = withDebugAarMetadataDiagnostic(config);
