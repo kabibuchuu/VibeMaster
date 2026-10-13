@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { AudioSession, LiveKitRoom, useLocalParticipant } from '@livekit/react-native';
-import { auth, firebaseApp } from '../firebase';
+import { auth } from '../firebase';
 
 type VoiceTokenResponse = { serverUrl: string; token: string };
 
@@ -51,7 +51,8 @@ export default function VoiceScreen() {
   useEffect(() => {
     let cancelled = false;
     async function connect() {
-      if (!auth.currentUser) {
+      const user = auth.currentUser;
+      if (!user) {
         setError('Sign in to VibeMaster before joining voice.');
         return;
       }
@@ -66,7 +67,7 @@ export default function VoiceScreen() {
             'Voice service is not configured yet. Deploy the free Cloudflare Worker in voice-token-worker and set EXPO_PUBLIC_VOICE_TOKEN_URL to its URL.',
           );
         }
-        const idToken = await auth.currentUser.getIdToken();
+        const idToken = await user.getIdToken();
         const response = await fetch(voiceTokenUrl, {
           method: 'POST',
           headers: {
