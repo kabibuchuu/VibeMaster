@@ -174,7 +174,7 @@ class VibeMasterPlayerModule : Module() {
         "artist" to (player?.mediaMetadata?.artist?.toString().orEmpty()),
     )
 
-    private fun getController(): MediaController {
+    private suspend fun getController(): MediaController {
         controller?.let { return it }
         val context: Context = requireNotNull(appContext.reactContext) {
             "React context is not available"
