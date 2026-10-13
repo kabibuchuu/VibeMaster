@@ -5,9 +5,9 @@ function withVibeMasterMinSdk(config) {
     let source = modConfig.modResults.contents;
     // Keep this setting in generated Gradle rather than app.json, whose Expo schema
     // does not accept android.minSdkVersion on this SDK line.
-    source = source.replace(/minSdkVersion\\s*(?:=\\s*)?rootProject\\.ext\\.minSdkVersion/g, 'minSdkVersion 26');
-    if (!/minSdkVersion\\s+26/.test(source)) {
-      source = source.replace(/defaultConfig\\s*\\{/, (match) => `${match}\\n        minSdkVersion 26`);
+    source = source.replace(/minSdkVersion\s*(?:=\s*)?rootProject\.ext\.minSdkVersion/g, 'minSdkVersion 26');
+    if (!/minSdkVersion\s+26/.test(source)) {
+      source = source.replace(/defaultConfig\s*\{/, (match) => 'defaultConfig {\n        minSdkVersion 26');
     }
     modConfig.modResults.contents = source;
     return modConfig;
