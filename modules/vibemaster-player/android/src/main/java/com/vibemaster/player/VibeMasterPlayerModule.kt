@@ -5,13 +5,10 @@ import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.util.concurrent.TimeUnit
@@ -24,7 +21,7 @@ class VibeMasterPlayerModule : Module() {
         Name("VibeMasterPlayer")
         Events("playbackStateChanged")
 
-        AsyncFunction("resolveTrack") { videoId: String ->
+        AsyncFunction("resolveTrack") Coroutine { videoId: String ->
             val context = requireNotNull(appContext.reactContext) {
                 "React context is not available"
             }
@@ -43,8 +40,8 @@ class VibeMasterPlayerModule : Module() {
         AsyncFunction("play") { uri: String, title: String, artist: String, mimeType: String?, headers: Map<String, String>? ->
             val context = requireNotNull(appContext.reactContext) { "React context is not available" }
             val player = getController()
-            val source = createMediaSource(context, uri, title, artist, mimeType, headers.orEmpty())
-            player.setMediaSource(source)
+            val item = createMediaItem(uri, title, artist, mimeType)
+            player.setMediaItem(item)
             player.prepare()
             player.play()
             true
@@ -59,11 +56,11 @@ class VibeMasterPlayerModule : Module() {
                 val artist = track["artist"] as? String ?: ""
                 val mimeType = track["mimeType"] as? String
                 val headers = stringMap(track["headers"])
-                createMediaSource(context, uri, title, artist, mimeType, headers)
+                createMediaItem(uri, title, artist, mimeType)
             }
             val player = getController()
             val safeIndex = startIndex.coerceIn(0, sources.lastIndex)
-            player.setMediaSources(sources, safeIndex, 0L)
+            player.setMediaItems(sources, safeIndex, 0L)
             player.prepare()
             player.play()
             true
@@ -111,25 +108,16 @@ class VibeMasterPlayerModule : Module() {
         }
     }
 
-    private fun createMediaSource(
-        context: Context,
+    private fun createMediaItem(
         uri: String,
         title: String,
         artist: String,
         mimeType: String?,
-        headers: Map<String, String>,
-    ): MediaSource {
+    ): MediaItem {
         val metadata = MediaMetadata.Builder().setTitle(title).setArtist(artist).build()
-        val mediaItemBuilder = MediaItem.Builder().setUri(uri).setMediaMetadata(metadata)
-        if (!mimeType.isNullOrBlank()) mediaItemBuilder.setMimeType(mimeType)
-        val item = mediaItemBuilder.build()
-        val headerMap = headers.filterKeys { !it.equals("User-Agent", ignoreCase = true) }
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(headers.entries.firstOrNull { it.key.equals("User-Agent", ignoreCase = true) }?.value
-                ?: "VibeMaster/Android")
-            .setDefaultRequestProperties(headerMap)
-        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
-        return DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(item)
+        val builder = MediaItem.Builder().setUri(uri).setMediaMetadata(metadata)
+        if (!mimeType.isNullOrBlank()) builder.setMimeType(mimeType)
+        return builder.build()
     }
 
     private fun stringMap(value: Any?): Map<String, String> {
