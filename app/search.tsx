@@ -20,6 +20,18 @@ export default function Search() {
 
   async function search() {
     if (!query.trim() || loading) return;
+    // Without a YouTube Data API key, normal text search cannot return in-app results.
+    // Hand the query to the official YouTube Music search instead of appearing to do nothing.
+    if (!youtubeConfigured() && !parseYouTubeVideoId(query)) {
+      setError('Opening YouTube Music search. Paste a YouTube video link here to add a specific track directly to VibeMaster.');
+      try {
+        await openYouTubeMusicSearch(query);
+      } catch {
+        setError('Could not open YouTube Music. Check your internet connection or install a browser/YouTube Music app.');
+        Alert.alert('Search could not open', 'Check your internet connection or install a browser/YouTube Music app.');
+      }
+      return;
+    }
     setLoading(true);
     setError('');
     try {
