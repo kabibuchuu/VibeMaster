@@ -235,17 +235,17 @@ export default function RoomScreen() {
       // Native Media3 is not available on every device/build. Keep the room
       // usable by falling back to the embedded YouTube player instead of
       // trapping the listener behind a native playback error dialog.
+      playerRef.current?.injectJavaScript(
+        'try{if(window.vmPlayer){window.vmPlayer.playVideo();}}catch(e){};true;',
+      );
       if (publishRoomEngine) {
         setNativePlaybackStatus('Native audio unavailable; continuing with the embedded player.');
-        playerRef.current?.injectJavaScript(
-          'try{if(window.vmPlayer){window.vmPlayer.playVideo();}}catch(e){};true;',
-        );
         // The shared engine is only switched to native after native playback
         // has started successfully. If startup fails, Firestore already remains
         // on the embedded engine, so don't issue another write that could mask
         // the playback fallback with a permissions error.
       } else {
-        setNativePlaybackStatus('Native audio unavailable on this device.');
+        setNativePlaybackStatus('Native audio unavailable on this device; using embedded playback locally.');
       }
     } finally {
       setNativePlaybackBusy(false);
