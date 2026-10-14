@@ -1,0 +1,15 @@
+{
+  "name": "vibemaster-voice-token-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "jose": "^6.0.11",
+    "livekit-server-sdk": "^2.13.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

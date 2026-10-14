@@ -231,14 +231,21 @@ export default function RoomScreen() {
       nativeFailedItemRef.current = selected.id;
       nativeTrackItemRef.current = '';
       setNativePlaybackActive(false);
-      setNativePlaybackStatus(e instanceof Error ? e.message : 'Native playback could not start.');
+
+      // Native Media3 is not available on every device/build. Keep the room
+      // usable by falling back to the embedded YouTube player instead of
+      // trapping the listener behind a native playback error dialog.
+      playerRef.current?.injectJavaScript(
+        'try{if(window.vmPlayer){window.vmPlayer.playVideo();}}catch(e){};true;',
+      );
       if (publishRoomEngine) {
-        Alert.alert(
-          'Native playback failed',
-          e instanceof Error ? e.message : 'No playable audio stream was returned. Try another track.',
-        );
+        setNativePlaybackStatus('Native audio unavailable; continuing with the embedded player.');
+        // The shared engine is only switched to native after native playback
+        // has started successfully. If startup fails, Firestore already remains
+        // on the embedded engine, so don't issue another write that could mask
+        // the playback fallback with a permissions error.
       } else {
-        setError(e instanceof Error ? e.message : 'A participant could not resolve this track for native playback.');
+        setNativePlaybackStatus('Native audio unavailable on this device; using embedded playback locally.');
       }
     } finally {
       setNativePlaybackBusy(false);
@@ -918,10 +925,23 @@ export default function RoomScreen() {
       {current ? (
         <View style={[s.player, fullScreen && s.fullscreenVideo]}>
           {current && room?.playbackEngine === 'native' ? (
-            <View style={[s.emptyPlayer, { gap: 12 }]}>
-              <Image source={{ uri: current.thumbnail }} style={{ width: 142, height: 142, borderRadius: 18 }} />
-              <Text style={s.emptyPlayerText}>NATIVE AUDIO</Text>
-              <Text style={{ color: '#c4b5fd', fontSize: 12, textAlign: 'center' }}>
+            <View style={[s.emptyPlayer, { gap: 10, paddingVertical: 14, paddingHorizontal: 18 }]}>
+              <Image
+                source={{ uri: current.thumbnail }}
+                resizeMode="cover"
+                accessibilityLabel={current.title + ' album artwork'}
+                style={{ width: 218, height: 218, borderRadius: 22, backgroundColor: '#201d27' }}
+              />
+              <Text style={{ color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 2, marginTop: 2 }}>
+                NOW PLAYING
+              </Text>
+              <Text numberOfLines={2} style={{ color: '#fff', fontSize: 17, fontWeight: '900', textAlign: 'center' }}>
+                {current.title}
+              </Text>
+              <Text numberOfLines={1} style={{ color: '#aaa2b8', fontSize: 12, textAlign: 'center' }}>
+                {current.channelTitle}
+              </Text>
+              <Text style={{ color: '#c4b5fd', fontSize: 10, textAlign: 'center', marginTop: 2 }}>
                 {nativePlaybackStatus || 'Synchronizing native playback…'}
               </Text>
             </View>

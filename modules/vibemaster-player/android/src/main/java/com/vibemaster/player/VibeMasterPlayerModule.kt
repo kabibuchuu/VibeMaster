@@ -13,20 +13,20 @@ import com.google.common.util.concurrent.ListenableFuture
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 class VibeMasterPlayerModule : Module() {
-    private var controller: MediaController? = null
-    private var controllerFuture: ListenableFuture<MediaController>? = null
+    @Volatile private var controller: MediaController? = null
+    @Volatile private var controllerFuture: ListenableFuture<MediaController>? = null
 
     override fun definition() = ModuleDefinition {
         Name("VibeMasterPlayer")
         Events("playbackStateChanged")
 
         AsyncFunction("resolveTrack") Coroutine { videoId: String ->
-            val context = requireNotNull(appContext.reactContext) {
-                "React context is not available"
-            }
+            val context = requireNotNull(appContext.reactContext) { "React context is not available" }
             YouTubeStreamResolver.initialize(context)
             val stream = YouTubeStreamResolver.resolve(videoId)
             mapOf(
@@ -39,58 +39,55 @@ class VibeMasterPlayerModule : Module() {
             )
         }
 
-        AsyncFunction("play") { uri: String, title: String, artist: String, mimeType: String?, headers: Map<String, String>? ->
-            val context = requireNotNull(appContext.reactContext) { "React context is not available" }
+        AsyncFunction("play") Coroutine { uri: String, title: String, artist: String, mimeType: String?, headers: Map<String, String>? ->
             val player = getController()
-            val item = createMediaItem(uri, title, artist, mimeType, headers.orEmpty())
-            player.setMediaItem(item)
+            player.setMediaItem(createMediaItem(uri, title, artist, mimeType, headers.orEmpty()))
             player.prepare()
             player.play()
             true
         }
 
-        AsyncFunction("setQueue") { tracks: List<Map<String, Any?>>, startIndex: Int ->
+        AsyncFunction("setQueue") Coroutine { tracks: List<Map<String, Any?>>, startIndex: Int ->
             require(tracks.isNotEmpty()) { "Queue cannot be empty" }
-            val context = requireNotNull(appContext.reactContext) { "React context is not available" }
             val sources = tracks.map { track ->
                 val uri = requireNotNull(track["uri"] as? String) { "Each queue item needs a uri" }
-                val title = track["title"] as? String ?: ""
-                val artist = track["artist"] as? String ?: ""
-                val mimeType = track["mimeType"] as? String
-                val headers = stringMap(track["headers"])
-                createMediaItem(uri, title, artist, mimeType, headers)
+                createMediaItem(
+                    uri,
+                    track["title"] as? String ?: "",
+                    track["artist"] as? String ?: "",
+                    track["mimeType"] as? String,
+                    stringMap(track["headers"]),
+                )
             }
             val player = getController()
-            val safeIndex = startIndex.coerceIn(0, sources.lastIndex)
-            player.setMediaItems(sources, safeIndex, 0L)
+            player.setMediaItems(sources, startIndex.coerceIn(0, sources.lastIndex), 0L)
             player.prepare()
             player.play()
             true
         }
 
-        AsyncFunction("pause") { getController().pause(); true }
-        AsyncFunction("resume") { getController().play(); true }
-        AsyncFunction("seekTo") { positionMs: Double ->
+        AsyncFunction("pause") Coroutine { getController().pause(); true }
+        AsyncFunction("resume") Coroutine { getController().play(); true }
+        AsyncFunction("seekTo") Coroutine { positionMs: Double ->
             getController().seekTo(positionMs.toLong().coerceAtLeast(0L))
             true
         }
-        AsyncFunction("skipNext") {
+        AsyncFunction("skipNext") Coroutine {
             val player = getController()
             if (player.hasNextMediaItem()) player.seekToNextMediaItem()
             true
         }
-        AsyncFunction("skipPrevious") {
+        AsyncFunction("skipPrevious") Coroutine {
             val player = getController()
-            if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
-            else player.seekTo(0L)
+            if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0L)
             true
         }
-        AsyncFunction("stop") { getController().stop(); true }
-        AsyncFunction("setVolume") { volume: Double ->
+        AsyncFunction("stop") Coroutine { getController().stop(); true }
+        AsyncFunction("setVolume") Coroutine { volume: Double ->
             getController().volume = volume.toFloat().coerceIn(0f, 1f)
             true
         }
-        AsyncFunction("getState") {
+        AsyncFunction("getState") Coroutine {
             val player = getController()
             mapOf(
                 "isPlaying" to player.isPlaying,
@@ -123,11 +120,12 @@ class VibeMasterPlayerModule : Module() {
         val extras = Bundle().apply {
             headers.forEach { (name, value) -> putString("vibemaster.header.$name", value) }
         }
-        val requestMetadata = MediaItem.RequestMetadata.Builder()
-            .setMediaUri(Uri.parse(uri))
-            .setExtras(extras)
-            .build()
-        builder.setRequestMetadata(requestMetadata)
+        builder.setRequestMetadata(
+            MediaItem.RequestMetadata.Builder()
+                .setMediaUri(Uri.parse(uri))
+                .setExtras(extras)
+                .build(),
+        )
         return builder.build()
     }
 
@@ -142,16 +140,15 @@ class VibeMasterPlayerModule : Module() {
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            val player = controller
-            sendEvent("playbackStateChanged", stateMap(player, isPlaying))
+            sendEvent("playbackStateChanged", stateMap(controller, isPlaying))
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             sendEvent(
                 "playbackStateChanged",
                 mapOf(
-                    "title" to (mediaItem?.mediaMetadata?.title?.toString().orEmpty()),
-                    "artist" to (mediaItem?.mediaMetadata?.artist?.toString().orEmpty()),
+                    "title" to mediaItem?.mediaMetadata?.title?.toString().orEmpty(),
+                    "artist" to mediaItem?.mediaMetadata?.artist?.toString().orEmpty(),
                     "currentIndex" to (controller?.currentMediaItemIndex ?: 0),
                 ),
             )
@@ -168,27 +165,41 @@ class VibeMasterPlayerModule : Module() {
         "positionMs" to (player?.currentPosition ?: 0L),
         "durationMs" to (player?.duration?.coerceAtLeast(0L) ?: 0L),
         "currentIndex" to (player?.currentMediaItemIndex ?: 0),
-        "title" to (player?.mediaMetadata?.title?.toString().orEmpty()),
-        "artist" to (player?.mediaMetadata?.artist?.toString().orEmpty()),
+        "title" to player?.mediaMetadata?.title?.toString().orEmpty(),
+        "artist" to player?.mediaMetadata?.artist?.toString().orEmpty(),
     )
 
-    private fun getController(): MediaController {
-        controller?.let { return it }
+    private suspend fun getController(): MediaController = withContext(Dispatchers.IO) {
+        controller?.let { return@withContext it }
         val context: Context = requireNotNull(appContext.reactContext) {
             "React context is not available"
         }
         val token = SessionToken(context, ComponentName(context, VibeMasterPlaybackService::class.java))
-        val future = MediaController.Builder(context, token).buildAsync()
-        controllerFuture = future
+        val future = synchronized(this@VibeMasterPlayerModule) {
+            controller?.let { return@withContext it }
+            controllerFuture ?: MediaController.Builder(context, token).buildAsync().also {
+                controllerFuture = it
+            }
+        }
         val created = try {
-            future.get(10, TimeUnit.SECONDS)
+            future.get(20, TimeUnit.SECONDS)
         } catch (error: Exception) {
             future.cancel(true)
-            controllerFuture = null
-            throw IllegalStateException("Unable to connect to VibeMaster playback service", error)
+            synchronized(this@VibeMasterPlayerModule) {
+                if (controllerFuture === future) controllerFuture = null
+            }
+            throw IllegalStateException("Unable to connect to VibeMaster playback service: ${error.message ?: error.javaClass.simpleName}", error)
         }
-        created.addListener(playerListener)
-        controller = created
-        return created
+        synchronized(this@VibeMasterPlayerModule) {
+            val existing = controller
+            if (existing != null) {
+                if (created !== existing) created.release()
+                existing
+            } else {
+                created.addListener(playerListener)
+                controller = created
+                created
+            }
+        }
     }
 }
