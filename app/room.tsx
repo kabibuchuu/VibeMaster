@@ -925,10 +925,23 @@ export default function RoomScreen() {
       {current ? (
         <View style={[s.player, fullScreen && s.fullscreenVideo]}>
           {current && room?.playbackEngine === 'native' ? (
-            <View style={[s.emptyPlayer, { gap: 12 }]}>
-              <Image source={{ uri: current.thumbnail }} style={{ width: 142, height: 142, borderRadius: 18 }} />
-              <Text style={s.emptyPlayerText}>NATIVE AUDIO</Text>
-              <Text style={{ color: '#c4b5fd', fontSize: 12, textAlign: 'center' }}>
+            <View style={[s.emptyPlayer, { gap: 10, paddingVertical: 14, paddingHorizontal: 18 }]}>
+              <Image
+                source={{ uri: current.thumbnail }}
+                resizeMode="cover"
+                accessibilityLabel={current.title + ' album artwork'}
+                style={{ width: 218, height: 218, borderRadius: 22, backgroundColor: '#201d27' }}
+              />
+              <Text style={{ color: '#a78bfa', fontSize: 9, fontWeight: '900', letterSpacing: 2, marginTop: 2 }}>
+                NOW PLAYING
+              </Text>
+              <Text numberOfLines={2} style={{ color: '#fff', fontSize: 17, fontWeight: '900', textAlign: 'center' }}>
+                {current.title}
+              </Text>
+              <Text numberOfLines={1} style={{ color: '#aaa2b8', fontSize: 12, textAlign: 'center' }}>
+                {current.channelTitle}
+              </Text>
+              <Text style={{ color: '#c4b5fd', fontSize: 10, textAlign: 'center', marginTop: 2 }}>
                 {nativePlaybackStatus || 'Synchronizing native playback…'}
               </Text>
             </View>
